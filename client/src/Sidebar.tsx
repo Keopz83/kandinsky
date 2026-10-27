@@ -11,7 +11,7 @@ interface Props {
   onExport: (format: Format) => void
   onAddRectangle: () => void
   onToolChange: (tool: Tool) => void
-  selectedCount: number
+  selectedShapeCount: number
   onAlign: (direction: AlignDirection) => void
   onAutoLayout: () => void
 }
@@ -91,7 +91,7 @@ export function Sidebar(props: Props) {
         <h2>Arrange</h2>
         <button
           className="palette-item"
-          disabled={props.selectedCount < 2}
+          disabled={props.selectedShapeCount < 2}
           title="Line up the selected rectangles in a row, centered on the first selected one"
           onClick={() => props.onAlign('horizontal')}
         >
@@ -105,7 +105,7 @@ export function Sidebar(props: Props) {
         </button>
         <button
           className="palette-item"
-          disabled={props.selectedCount < 2}
+          disabled={props.selectedShapeCount < 2}
           title="Line up the selected rectangles in a column, centered on the first selected one"
           onClick={() => props.onAlign('vertical')}
         >

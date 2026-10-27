@@ -38,8 +38,8 @@ export const api = {
     request<Shape>('PATCH', at(id, 'shapes', shapeId), patch),
   deleteShape: (id: string, shapeId: string) => request<void>('DELETE', at(id, 'shapes', shapeId)),
 
-  addEdge: (id: string, sourceId: string, targetId: string) =>
-    request<Edge>('POST', at(id, 'edges'), { sourceId, targetId }),
+  addEdge: (id: string, sourceId: string, targetId: string, label?: string | null) =>
+    request<Edge>('POST', at(id, 'edges'), { sourceId, targetId, label }),
   updateEdge: (id: string, edgeId: string, patch: { label?: string }) =>
     request<Edge>('PATCH', at(id, 'edges', edgeId), patch),
   deleteEdge: (id: string, edgeId: string) => request<void>('DELETE', at(id, 'edges', edgeId)),

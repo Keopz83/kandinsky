@@ -44,8 +44,9 @@ export function App() {
   // StrictMode runs effects twice in development; the startup diagram must be created only once.
   const started = useRef(false)
   const diagramId = diagram?.id
-  // Shapes may disappear through other clients; ignore those ids.
-  const selected = selection.filter((id) => diagram?.shapes.some((s) => s.id === id))
+  // Shapes and edges may disappear through other clients; ignore those ids.
+  const selected = selection.filter((id) => diagram?.shapes.some((s) => s.id === id) || diagram?.edges.some((e) => e.id === id))
+  const selectedShapes = selected.filter((id) => diagram?.shapes.some((s) => s.id === id))
 
   const run = useCallback(async (action: () => Promise<unknown>, success?: string) => {
     setError('')
@@ -190,8 +191,8 @@ export function App() {
         onExport={onExport}
         onAddRectangle={() => void mutate((id) => api.addShape(id, {}))}
         onToolChange={setTool}
-        selectedCount={selected.length}
-        onAlign={(direction: AlignDirection) => void mutate((id) => api.align(id, selected, direction))}
+        selectedShapeCount={selectedShapes.length}
+        onAlign={(direction: AlignDirection) => void mutate((id) => api.align(id, selectedShapes, direction))}
         onAutoLayout={() => void mutate((id) => api.layout(id))}
       />
       <main className="main">
@@ -205,7 +206,7 @@ export function App() {
           <span className="hint">
             {tool === 'edge'
               ? 'Click the source rectangle, then the target. Repeat for more edges. Esc returns to selection.'
-              : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select several · double-click to rename · Delete removes the selection'}
+              : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select rectangles and edges · double-click to rename · Delete removes the selection'}
           </span>
         </header>
         {diagram ? (

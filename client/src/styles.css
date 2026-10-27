@@ -279,8 +279,14 @@ select:disabled {
   cursor: nwse-resize;
 }
 
-.shape.ghost {
+.shape.ghost,
+.edge.ghost {
   opacity: 0.6;
+}
+
+.edge.ghost .line {
+  stroke: var(--accent);
+  stroke-dasharray: 4 3;
 }
 
 .shape.ghost rect {

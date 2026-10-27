@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { DragEvent, PointerEvent } from 'react'
 import { api } from './api'
 import { LabelInput } from './LabelInput'
-import type { Diagram, Shape, Tool } from './types'
+import type { Diagram, Edge, Shape, Tool } from './types'
 
 export const SHAPE_MIME = 'application/x-kandinsky-shape'
 
@@ -27,9 +27,12 @@ interface Drag {
   kind: 'move' | 'resize'
   copy: boolean
   start: Point
+  /** The shape or edge that was grabbed. */
   target: string
   originals: Shape[]
   currents: Shape[]
+  /** Selected edges, recreated between the copies when copying. */
+  edges: Edge[]
   active: boolean
 }
 
@@ -43,8 +46,9 @@ interface Point {
 interface Props {
   diagram: Diagram
   tool: Tool
+  /** Ids of the selected shapes and edges (they share one id space). */
   selected: string[]
-  onSelect: (shapeIds: string[]) => void
+  onSelect: (ids: string[]) => void
   onToolDone: () => void
   mutate: Mutate
 }
@@ -69,9 +73,45 @@ function borderPoint(s: Shape, toward: Point): Point {
   return { x: c.x + dx * scale, y: c.y + dy * scale }
 }
 
+function edgeEnds(from: Shape, to: Shape) {
+  return { start: borderPoint(from, center(to)), end: borderPoint(to, center(from)) }
+}
+
+type Box = ReturnType<typeof boxOf>
+
+const shapeTouches = (s: Shape, box: Box) =>
+  s.x <= box.x + box.width && s.x + s.width >= box.x && s.y <= box.y + box.height && s.y + s.height >= box.y
+
+// Liang–Barsky clipping: does the segment a→b touch the box?
+function segmentTouches(a: Point, b: Point, box: Box) {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  let t0 = 0
+  let t1 = 1
+  for (const [p, q] of [
+    [-dx, a.x - box.x],
+    [dx, box.x + box.width - a.x],
+    [-dy, a.y - box.y],
+    [dy, box.y + box.height - a.y],
+  ]) {
+    if (p === 0) {
+      if (q < 0) {
+        return false
+      }
+    } else if (p < 0) {
+      t0 = Math.max(t0, q / p)
+    } else {
+      t1 = Math.min(t1, q / p)
+    }
+    if (t0 > t1) {
+      return false
+    }
+  }
+  return true
+}
+
 export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
-  const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
   const [editing, setEditing] = useState<Selection>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
   const [marquee, setMarquee] = useState<Marquee | null>(null)
@@ -82,6 +122,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   const shapes = diagram.shapes.map((s) => dragged.get(s.id) ?? s)
   const byId = new Map(shapes.map((s) => [s.id, s]))
   const source = tool === 'edge' && edgeSource ? byId.get(edgeSource) : undefined
+  const selectedShapes = selected.filter((id) => byId.has(id))
+  const selectedEdges = diagram.edges.filter((edge) => selected.includes(edge.id))
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -90,29 +132,27 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
       }
       if (e.key === 'Escape') {
         setEdgeSource(null)
-        setSelectedEdge(null)
         onSelect([])
         onToolDone()
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedEdge || selected.length > 0)) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selected.length > 0) {
         e.preventDefault()
-        const edgeId = selectedEdge
-        const shapeIds = selected
-        setSelectedEdge(null)
+        const ids = selected
         onSelect([])
         void mutate(async (d) => {
-          if (edgeId) {
-            await api.deleteEdge(d, edgeId)
+          // Edges first: deleting a shape also removes its edges on the server.
+          for (const edge of diagram.edges.filter((edge) => ids.includes(edge.id))) {
+            await api.deleteEdge(d, edge.id)
           }
-          for (const id of shapeIds) {
-            await api.deleteShape(d, id)
+          for (const shape of diagram.shapes.filter((shape) => ids.includes(shape.id))) {
+            await api.deleteShape(d, shape.id)
           }
         })
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selected, selectedEdge, onSelect, mutate, onToolDone])
+  }, [diagram, selected, onSelect, mutate, onToolDone])
 
   function toPoint(e: { clientX: number; clientY: number }): Point {
     const rect = svgRef.current!.getBoundingClientRect()
@@ -133,25 +173,35 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     void mutate((d) => api.addEdge(d, sourceId, targetId))
   }
 
-  function startDrag(e: PointerEvent, shape: Shape, kind: Drag['kind']) {
+  // The shapes a move carries along: the selected ones plus the endpoints of selected edges.
+  function shapesToMove(ids: string[]) {
+    const endpoints = new Set(diagram.edges.filter((edge) => ids.includes(edge.id)).flatMap((edge) => [edge.sourceId, edge.targetId]))
+    return shapes.filter((s) => ids.includes(s.id) || endpoints.has(s.id))
+  }
+
+  /** Starts moving (or resizing) on a shape or edge; `id` is the grabbed object. */
+  function startDrag(e: PointerEvent, id: string, kind: Drag['kind']) {
     e.stopPropagation()
     if (e.button !== 0) {
       return
     }
     if (tool === 'edge') {
-      connect(shape.id)
+      if (byId.has(id)) {
+        connect(id)
+      }
       return
     }
-    setSelectedEdge(null)
     if (kind === 'move' && (e.ctrlKey || e.metaKey)) {
-      onSelect(selected.includes(shape.id) ? selected.filter((id) => id !== shape.id) : [...selected, shape.id])
+      onSelect(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id])
       return
     }
-    const group = kind === 'move' && selected.includes(shape.id) ? shapes.filter((s) => selected.includes(s.id)) : [shape]
-    if (group.length === 1) {
-      onSelect([shape.id])
+    const ids = kind === 'move' && selected.includes(id) ? selected : [id]
+    if (!selected.includes(id)) {
+      onSelect([id])
     }
-    setDrag({ kind, copy: kind === 'move' && e.shiftKey, start: toPoint(e), target: shape.id, originals: group, currents: group, active: true })
+    const group = kind === 'resize' ? shapes.filter((s) => s.id === id) : shapesToMove(ids)
+    const edges = diagram.edges.filter((edge) => ids.includes(edge.id))
+    setDrag({ kind, copy: kind === 'move' && e.shiftKey, start: toPoint(e), target: id, originals: group, currents: group, edges, active: true })
   }
 
   function onPointerMove(e: PointerEvent) {
@@ -185,7 +235,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     }
     const { originals, currents } = drag
     if (currents.every((c, i) => unchanged(c, originals[i]))) {
-      if (originals.length > 1) {
+      // A plain click on one of several selected objects selects just that one.
+      if (selected.length > 1 && selected.includes(drag.target)) {
         onSelect([drag.target])
       }
       setDrag(null)
@@ -195,12 +246,18 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     setDrag({ ...drag, active: false })
     if (drag.copy) {
       await mutate(async (d) => {
-        const ids: string[] = []
+        const copies = new Map<string, string>()
         for (const c of currents) {
           const copy = await api.addShape(d, { label: c.label, x: c.x, y: c.y, width: c.width, height: c.height })
-          ids.push(copy.id)
+          copies.set(c.id, copy.id)
         }
-        onSelect(ids)
+        const edgeIds: string[] = []
+        for (const edge of drag.edges) {
+          const copy = await api.addEdge(d, copies.get(edge.sourceId)!, copies.get(edge.targetId)!, edge.label)
+          edgeIds.push(copy.id)
+        }
+        // Endpoints copied only to carry an edge along weren't selected, so they don't become selected either.
+        onSelect([...currents.filter((c) => selected.includes(c.id)).map((c) => copies.get(c.id)!), ...edgeIds])
       })
     } else {
       await mutate(async (d) => {
@@ -217,7 +274,6 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
       return
     }
     setEdgeSource(null)
-    setSelectedEdge(null)
     if (tool !== 'select') {
       return
     }
@@ -238,9 +294,20 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     if (box.width === 0 && box.height === 0) {
       return
     }
-    const inside = shapes
-      .filter((s) => s.x <= box.x + box.width && s.x + s.width >= box.x && s.y <= box.y + box.height && s.y + s.height >= box.y)
-      .map((s) => s.id)
+    const inside = [
+      ...shapes.filter((s) => shapeTouches(s, box)).map((s) => s.id),
+      ...diagram.edges
+        .filter((edge) => {
+          const from = byId.get(edge.sourceId)
+          const to = byId.get(edge.targetId)
+          if (!from || !to) {
+            return false
+          }
+          const { start, end } = edgeEnds(from, to)
+          return segmentTouches(start, end, box)
+        })
+        .map((edge) => edge.id),
+    ]
     if (inside.length > 0) {
       onSelect(marquee.additive ? [...selected, ...inside.filter((id) => !selected.includes(id))] : inside)
     }
@@ -302,22 +369,15 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
           if (!from || !to) {
             return null
           }
-          const start = borderPoint(from, center(to))
-          const end = borderPoint(to, center(from))
+          const { start, end } = edgeEnds(from, to)
           const middle = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
-          const selected = selectedEdge === edge.id
+          const selected = selectedEdges.includes(edge)
           const isEditing = editing?.kind === 'edge' && editing.id === edge.id
           return (
             <g
               key={edge.id}
               className={`edge ${selected ? 'selected' : ''}`}
-              onPointerDown={(e) => {
-                e.stopPropagation()
-                if (tool === 'select') {
-                  setSelectedEdge(edge.id)
-                  onSelect([])
-                }
-              }}
+              onPointerDown={(e) => startDrag(e, edge.id, 'move')}
               onDoubleClick={() => setEditing({ kind: 'edge', id: edge.id })}
             >
               <line className="hit" x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
@@ -358,7 +418,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
 
         {shapes.map((shape) => {
           const isSelected = selected.includes(shape.id)
-          const isAnchor = selected.length > 1 && selected[0] === shape.id
+          // The first selected shape is the align anchor.
+          const isAnchor = selectedShapes.length > 1 && selectedShapes[0] === shape.id
           const isEditing = editing?.kind === 'shape' && editing.id === shape.id
           return (
             <g
@@ -371,7 +432,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
                 width={shape.width}
                 height={shape.height}
                 rx={4}
-                onPointerDown={(e) => startDrag(e, shape, 'move')}
+                onPointerDown={(e) => startDrag(e, shape.id, 'move')}
                 onDoubleClick={() => setEditing({ kind: 'shape', id: shape.id })}
               />
               <foreignObject
@@ -401,22 +462,14 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
                   y={shape.y + shape.height - 5}
                   width={10}
                   height={10}
-                  onPointerDown={(e) => startDrag(e, shape, 'resize')}
+                  onPointerDown={(e) => startDrag(e, shape.id, 'resize')}
                 />
               )}
             </g>
           )
         })}
 
-        {drag?.copy &&
-          drag.currents.map((c) => (
-            <g key={c.id} className="shape ghost" pointerEvents="none">
-              <rect x={c.x} y={c.y} width={c.width} height={c.height} rx={4} />
-              <foreignObject x={c.x} y={c.y} width={c.width} height={c.height}>
-                <div className="label">{c.label}</div>
-              </foreignObject>
-            </g>
-          ))}
+        {drag?.copy && <CopyGhosts drag={drag} />}
 
         {marquee && <rect className="marquee" {...boxOf(marquee.start, marquee.current)} />}
 
@@ -425,5 +478,29 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
         )}
       </svg>
     </div>
+  )
+}
+
+function CopyGhosts({ drag }: { drag: Drag }) {
+  const byId = new Map(drag.currents.map((c) => [c.id, c]))
+  return (
+    <g pointerEvents="none">
+      {drag.edges.map((edge) => {
+        const { start, end } = edgeEnds(byId.get(edge.sourceId)!, byId.get(edge.targetId)!)
+        return (
+          <g key={edge.id} className="edge ghost">
+            <line className="line" x1={start.x} y1={start.y} x2={end.x} y2={end.y} markerEnd="url(#arrow)" />
+          </g>
+        )
+      })}
+      {drag.currents.map((c) => (
+        <g key={c.id} className="shape ghost">
+          <rect x={c.x} y={c.y} width={c.width} height={c.height} rx={4} />
+          <foreignObject x={c.x} y={c.y} width={c.width} height={c.height}>
+            <div className="label">{c.label}</div>
+          </foreignObject>
+        </g>
+      ))}
+    </g>
   )
 }
