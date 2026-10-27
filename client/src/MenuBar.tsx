@@ -14,8 +14,7 @@ interface Props {
   onSave: () => void
   onSaveAs: () => void
   /** Called without a file when the browser offers a file picker that App opens itself. */
-  onImport: (file?: File) => void
-  onExport: (format: Format) => void
+  onOpen: (file?: File) => void
   onSaveFormatChange: (format: Format) => void
 }
 
@@ -83,13 +82,10 @@ export function MenuBar(props: Props) {
           {open === 'file' && (
             <div className="dropdown" role="menu">
               {item('New', props.onNew)}
+              {item('Open…', () => (canPickOpenFile() ? props.onOpen() : fileInput.current?.click()))}
+              <hr />
               {item('Save', props.onSave, !hasDiagram, shortcut('S'))}
               {item('Save As…', props.onSaveAs, !hasDiagram, shortcut('S', true))}
-              <hr />
-              {item('Import…', () => (canPickOpenFile() ? props.onImport() : fileInput.current?.click()))}
-              <hr />
-              {item('Export as PlantUML', () => props.onExport('plantuml'), !hasDiagram)}
-              {item('Export as Mermaid', () => props.onExport('mermaid'), !hasDiagram)}
             </div>
           )}
         </div>
@@ -124,7 +120,7 @@ export function MenuBar(props: Props) {
             const file = e.target.files?.[0]
             e.target.value = ''
             if (file) {
-              props.onImport(file)
+              props.onOpen(file)
             }
           }}
         />

@@ -37,8 +37,10 @@ export function App() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [saveFormat, setSaveFormat] = useState<Format>(storedSaveFormat)
-  // File per whiteboard chosen by Save / Save As or imported from, so a later Save overwrites it without asking.
+  // File per whiteboard chosen by Save / Save As or opened from, so a later Save overwrites it without asking.
   const saveTargets = useRef(new Map<string, { target: SaveTarget; format: Format }>())
+  // Text last saved to or opened from a file per whiteboard; a whiteboard still exporting to it is saved.
+  const savedTexts = useRef(new Map<string, { format: Format; text: string }>())
   // Only the most recently requested diagram state may be shown, so late poll responses can't undo a change.
   const latestRequest = useRef(0)
   // Same for the whiteboard list, so a late poll can't drop a just created tab.
@@ -61,6 +63,17 @@ export function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
+  }, [])
+
+  const remember = useCallback(async (id: string, format: Format) => {
+    const text = await api.exportText(id, format)
+    savedTexts.current.set(id, { format, text })
+    return text
+  }, [])
+
+  const isSaved = useCallback(async (id: string) => {
+    const saved = savedTexts.current.get(id)
+    return saved !== undefined && (await api.exportText(id, saved.format)) === saved.text
   }, [])
 
   const load = useCallback(async (id: string) => {
@@ -159,31 +172,26 @@ export function App() {
   }
 
   function onClose(target: DiagramSummary) {
-    if (!window.confirm(`Delete whiteboard "${target.name}"? This cannot be undone.`)) {
-      return
-    }
     const index = diagrams.findIndex((d) => d.id === target.id)
     const neighbor = diagrams[index + 1] ?? diagrams[index - 1]
     void run(async () => {
+      // Saved whiteboards can be reopened from their file, so only unsaved ones need a confirmation.
+      if (!(await isSaved(target.id)) && !window.confirm(`Delete whiteboard "${target.name}"? This cannot be undone.`)) {
+        return
+      }
       // Switch away first, so a concurrent poll doesn't see the open whiteboard vanish.
       if (target.id === diagramId) {
         await show(neighbor ? await api.get(neighbor.id) : null)
       }
       await api.remove(target.id)
+      saveTargets.current.delete(target.id)
+      savedTexts.current.delete(target.id)
       await refreshTabs()
-    }, `Deleted ${target.name}`)
+      setMessage(`Deleted ${target.name}`)
+    })
   }
 
   const onNew = () => void run(async () => show(await api.create('Untitled')), 'Whiteboard created')
-
-  function onExport(format: Format) {
-    if (!diagram) {
-      return
-    }
-    void run(async () => {
-      download(fileName(diagram.name, format), await api.exportText(diagram.id, format))
-    }, `Exported as ${formats[format].label}`)
-  }
 
   function onSave(askForLocation: boolean) {
     if (!diagram) {
@@ -194,7 +202,7 @@ export function App() {
       if (!canPickSaveLocation()) {
         // Without the File System Access API the browser decides the location (or asks, depending on its settings).
         const file = fileName(name, saveFormat)
-        download(file, await api.exportText(id, saveFormat))
+        download(file, await remember(id, saveFormat))
         setMessage(`Downloaded ${file}`)
         return
       }
@@ -208,11 +216,13 @@ export function App() {
       const writable = await openWritable(target)
       if (!writable) {
         saveTargets.current.delete(id)
-        download(target.name, await api.exportText(id, format))
+        download(target.name, await remember(id, format))
         setMessage(`The browser does not allow writing to ${target.name} here; downloaded it instead`)
         return
       }
-      await writeText(writable, () => api.exportText(id, format))
+      let text = ''
+      await writeText(writable, async () => (text = await api.exportText(id, format)))
+      savedTexts.current.set(id, { format, text })
       saveTargets.current.set(id, { target, format })
       setMessage(`Saved ${target.name} (${formats[format].label})`)
     })
@@ -235,20 +245,23 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  function onImport(chosen?: File) {
+  function onOpen(chosen?: File) {
     void run(async () => {
       const picked = chosen ? { file: chosen, target: undefined } : await pickOpenFile()
       if (!picked) {
         return
       }
       const text = await picked.file.text()
-      const imported = await api.importText(text)
+      const opened = await api.importText(text)
+      const format = formatOf(picked.file.name, detectFormat(text))
       if (picked.target) {
-        // Save writes back to the imported file, in the format it was written in.
-        saveTargets.current.set(imported.id, { target: picked.target, format: formatOf(picked.file.name, detectFormat(text)) })
+        // Save writes back to the opened file, in the format it was written in.
+        saveTargets.current.set(opened.id, { target: picked.target, format })
       }
-      await show(imported)
-      setMessage(`Imported ${picked.file.name}`)
+      // The file's own text may be formatted differently, so the saved state is what the server exports for it.
+      await remember(opened.id, format)
+      await show(opened)
+      setMessage(`Opened ${picked.file.name}`)
     })
   }
 
@@ -266,8 +279,7 @@ export function App() {
         onNew={onNew}
         onSave={() => onSave(false)}
         onSaveAs={() => onSave(true)}
-        onImport={onImport}
-        onExport={onExport}
+        onOpen={onOpen}
         onSaveFormatChange={onSaveFormatChange}
       />
       <div className="workspace">
@@ -292,7 +304,7 @@ export function App() {
           {diagram ? (
             <Canvas diagram={diagram} tool={tool} selected={selected} onSelect={setSelection} onToolDone={selectTool} mutate={mutate} />
           ) : (
-            <div className="empty">Create a new whiteboard or import a PlantUML / Mermaid file to get started.</div>
+            <div className="empty">Create a new whiteboard or open a PlantUML / Mermaid file to get started.</div>
           )}
           <footer className={`status ${error ? 'error' : ''}`}>{error || message}</footer>
         </main>
