@@ -2,6 +2,8 @@
 
 Web app for creating code UML diagrams.
 
+![Kandinsky screenshot](screenshots/screenshot-1.png)
+
 - **Frontend** (`client/`): thin React client styled with Bootstrap CSS, with a header menu bar with a File drop-down (New, Open, Save, Save As) and a Settings drop-down (default save format), whiteboard tabs at the top of the canvas and a left shape palette (rectangle, directed edge).
 - **Backend** (`server/`): ASP.NET Core minimal API that owns and processes the diagrams. The UI and external clients (e.g. an MCP server) use the same REST API.
 - **Formats:** import and export as PlantUML or Mermaid class diagrams. Shape positions are kept in `kandinsky:layout` comments; files without them are auto-laid out on import.
