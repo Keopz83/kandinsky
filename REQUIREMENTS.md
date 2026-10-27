@@ -58,6 +58,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - **R-UI-12** The application opens with a new blank diagram.
 - **R-UI-13** Multiple diagrams (whiteboards) are shown as tabs at the top of the canvas, one tab per diagram on the server. Clicking a tab opens that diagram, a **+** tab creates a new one and a tab's **×** deletes the diagram after a confirmation. The left menu has no diagram list.
 - **R-UI-14** Dragging one of several selected rectangles moves all selected rectangles together, keeping their relative positions; with Shift held all of them are copied (R-UI-7). Clicking a selected rectangle without dragging selects only that rectangle.
+- **R-UI-15** Mouse wheel navigation on the whiteboard: pressing the wheel and dragging pans the whiteboard; rotating the wheel forward zooms in, backward zooms out, centered on the mouse pointer.
 
 ## Decisions (first implementation)
 

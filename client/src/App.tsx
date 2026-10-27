@@ -211,7 +211,7 @@ export function App() {
             <span className="hint">
               {tool === 'edge'
                 ? 'Click the source rectangle, then the target. Repeat for more edges. Esc returns to selection.'
-                : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select rectangles and edges · double-click to rename · Delete removes the selection'}
+                : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select rectangles and edges · double-click to rename · Delete removes the selection · wheel to zoom · drag with the wheel pressed to pan'}
             </span>
           </header>
           {diagram ? (

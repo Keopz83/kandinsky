@@ -9,9 +9,11 @@ export const SHAPE_MIME = 'application/x-kandinsky-shape'
 const MIN_SIZE = 20
 const DEFAULT_WIDTH = 140
 const DEFAULT_HEIGHT = 60
-const MARGIN = 400
 const EDGE_LABEL_WIDTH = 160
 const EDGE_LABEL_HEIGHT = 28
+const MIN_ZOOM = 0.25
+const MAX_ZOOM = 4
+const GRID = 20
 
 export type Mutate = (action: (diagramId: string) => Promise<unknown>) => Promise<void>
 
@@ -41,6 +43,21 @@ const unchanged = (a: Shape, b: Shape) => a.x === b.x && a.y === b.y && a.width 
 interface Point {
   x: number
   y: number
+}
+
+/** The visible part of the whiteboard: screen position of the diagram origin and the zoom factor. */
+interface View {
+  x: number
+  y: number
+  zoom: number
+}
+
+const DEFAULT_VIEW: View = { x: 0, y: 0, zoom: 1 }
+
+interface Pan {
+  pointerId: number
+  client: Point
+  view: View
 }
 
 interface Props {
@@ -112,6 +129,9 @@ function segmentTouches(a: Point, b: Point, box: Box) {
 
 export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
+  const [views, setViews] = useState<Record<string, View>>({})
+  const [pan, setPan] = useState<Pan | null>(null)
+  const view = views[diagram.id] ?? DEFAULT_VIEW
   const [editing, setEditing] = useState<Selection>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
   const [marquee, setMarquee] = useState<Marquee | null>(null)
@@ -154,9 +174,59 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [diagram, selected, onSelect, mutate, onToolDone])
 
+  // Mouse wheel forward zooms in, backward zooms out, keeping the point under the cursor in place.
+  useEffect(() => {
+    const svg = svgRef.current!
+    const diagramId = diagram.id
+    function onWheel(e: WheelEvent) {
+      if (e.deltaY === 0) {
+        return
+      }
+      e.preventDefault()
+      const delta = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY * 16 : e.deltaY
+      const rect = svg.getBoundingClientRect()
+      const cursor = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      setViews((views) => {
+        const v = views[diagramId] ?? DEFAULT_VIEW
+        const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.zoom * Math.exp(-delta * 0.002)))
+        const scale = zoom / v.zoom
+        return { ...views, [diagramId]: { zoom, x: cursor.x - (cursor.x - v.x) * scale, y: cursor.y - (cursor.y - v.y) * scale } }
+      })
+    }
+    svg.addEventListener('wheel', onWheel, { passive: false })
+    return () => svg.removeEventListener('wheel', onWheel)
+  }, [diagram.id])
+
+  // Pressing the mouse wheel and dragging pans the whiteboard, also when starting on a shape.
+  function onPanStart(e: PointerEvent<HTMLDivElement>) {
+    if (e.button !== 1) {
+      return
+    }
+    e.preventDefault()
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    setPan({ pointerId: e.pointerId, client: { x: e.clientX, y: e.clientY }, view })
+  }
+
+  function onPanMove(e: PointerEvent<HTMLDivElement>) {
+    if (!pan || e.pointerId !== pan.pointerId) {
+      return
+    }
+    e.stopPropagation()
+    const next = { ...pan.view, x: pan.view.x + e.clientX - pan.client.x, y: pan.view.y + e.clientY - pan.client.y }
+    setViews((views) => ({ ...views, [diagram.id]: next }))
+  }
+
+  function onPanEnd(e: PointerEvent<HTMLDivElement>) {
+    if (pan && e.pointerId === pan.pointerId) {
+      e.stopPropagation()
+      setPan(null)
+    }
+  }
+
   function toPoint(e: { clientX: number; clientY: number }): Point {
     const rect = svgRef.current!.getBoundingClientRect()
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    return { x: (e.clientX - rect.left - view.x) / view.zoom, y: (e.clientY - rect.top - view.y) / view.zoom }
   }
 
   function connect(targetId: string) {
@@ -338,15 +408,20 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
 
   const stopEditing = () => setEditing(null)
 
-  const width = Math.max(0, ...shapes.map((s) => s.x + s.width)) + MARGIN
-  const height = Math.max(0, ...shapes.map((s) => s.y + s.height)) + MARGIN
+  const grid = GRID * view.zoom
 
   return (
-    <div className={`canvas ${tool === 'edge' ? 'connecting' : ''}`}>
+    <div
+      className={`canvas ${tool === 'edge' ? 'connecting' : ''} ${pan ? 'panning' : ''}`}
+      onPointerDownCapture={onPanStart}
+      onPointerMoveCapture={onPanMove}
+      onPointerUpCapture={onPanEnd}
+      onPointerCancelCapture={onPanEnd}
+      onMouseDown={(e) => e.button === 1 && e.preventDefault()}
+    >
       <svg
         ref={svgRef}
-        width={width}
-        height={height}
+        style={{ backgroundSize: `${grid}px ${grid}px`, backgroundPosition: `${view.x}px ${view.y}px` }}
         onPointerDown={onBackgroundPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -362,120 +437,122 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
             </marker>
           ))}
         </defs>
+        <g transform={`translate(${view.x} ${view.y}) scale(${view.zoom})`}>
 
-        {diagram.edges.map((edge) => {
-          const from = byId.get(edge.sourceId)
-          const to = byId.get(edge.targetId)
-          if (!from || !to) {
-            return null
-          }
-          const { start, end } = edgeEnds(from, to)
-          const middle = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
-          const selected = selectedEdges.includes(edge)
-          const isEditing = editing?.kind === 'edge' && editing.id === edge.id
-          return (
-            <g
-              key={edge.id}
-              className={`edge ${selected ? 'selected' : ''}`}
-              onPointerDown={(e) => startDrag(e, edge.id, 'move')}
-              onDoubleClick={() => setEditing({ kind: 'edge', id: edge.id })}
-            >
-              <line className="hit" x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
-              <line
-                className="line"
-                x1={start.x}
-                y1={start.y}
-                x2={end.x}
-                y2={end.y}
-                markerEnd={`url(#${selected ? 'arrow-selected' : 'arrow'})`}
-              />
-              {isEditing ? (
-                <foreignObject
-                  x={middle.x - EDGE_LABEL_WIDTH / 2}
-                  y={middle.y - EDGE_LABEL_HEIGHT / 2}
-                  width={EDGE_LABEL_WIDTH}
-                  height={EDGE_LABEL_HEIGHT}
-                >
-                  <LabelInput
-                    className="label-input"
-                    ariaLabel="Edge label"
-                    autoFocus
-                    value={edge.label ?? ''}
-                    onCommit={(label) => void mutate((d) => api.updateEdge(d, edge.id, { label }))}
-                    onDone={stopEditing}
-                  />
-                </foreignObject>
-              ) : (
-                edge.label && (
-                  <text x={middle.x} y={middle.y - 6} textAnchor="middle">
-                    {edge.label}
-                  </text>
-                )
-              )}
-            </g>
-          )
-        })}
-
-        {shapes.map((shape) => {
-          const isSelected = selected.includes(shape.id)
-          // The first selected shape is the align anchor.
-          const isAnchor = selectedShapes.length > 1 && selectedShapes[0] === shape.id
-          const isEditing = editing?.kind === 'shape' && editing.id === shape.id
-          return (
-            <g
-              key={shape.id}
-              className={`shape ${isSelected ? 'selected' : ''} ${isAnchor ? 'anchor' : ''} ${source?.id === shape.id ? 'source' : ''}`}
-            >
-              <rect
-                x={shape.x}
-                y={shape.y}
-                width={shape.width}
-                height={shape.height}
-                rx={4}
-                onPointerDown={(e) => startDrag(e, shape.id, 'move')}
-                onDoubleClick={() => setEditing({ kind: 'shape', id: shape.id })}
-              />
-              <foreignObject
-                x={shape.x}
-                y={shape.y}
-                width={shape.width}
-                height={shape.height}
-                pointerEvents={isEditing ? undefined : 'none'}
+          {diagram.edges.map((edge) => {
+            const from = byId.get(edge.sourceId)
+            const to = byId.get(edge.targetId)
+            if (!from || !to) {
+              return null
+            }
+            const { start, end } = edgeEnds(from, to)
+            const middle = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
+            const selected = selectedEdges.includes(edge)
+            const isEditing = editing?.kind === 'edge' && editing.id === edge.id
+            return (
+              <g
+                key={edge.id}
+                className={`edge ${selected ? 'selected' : ''}`}
+                onPointerDown={(e) => startDrag(e, edge.id, 'move')}
+                onDoubleClick={() => setEditing({ kind: 'edge', id: edge.id })}
               >
-                {isEditing ? (
-                  <LabelInput
-                    className="label-input"
-                    ariaLabel="Shape label"
-                    autoFocus
-                    value={shape.label}
-                    onCommit={(label) => label.trim() && void mutate((d) => api.updateShape(d, shape.id, { label }))}
-                    onDone={stopEditing}
-                  />
-                ) : (
-                  <div className="label">{shape.label}</div>
-                )}
-              </foreignObject>
-              {isSelected && selected.length === 1 && tool === 'select' && (
-                <rect
-                  className="handle"
-                  x={shape.x + shape.width - 5}
-                  y={shape.y + shape.height - 5}
-                  width={10}
-                  height={10}
-                  onPointerDown={(e) => startDrag(e, shape.id, 'resize')}
+                <line className="hit" x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
+                <line
+                  className="line"
+                  x1={start.x}
+                  y1={start.y}
+                  x2={end.x}
+                  y2={end.y}
+                  markerEnd={`url(#${selected ? 'arrow-selected' : 'arrow'})`}
                 />
-              )}
-            </g>
-          )
-        })}
+                {isEditing ? (
+                  <foreignObject
+                    x={middle.x - EDGE_LABEL_WIDTH / 2}
+                    y={middle.y - EDGE_LABEL_HEIGHT / 2}
+                    width={EDGE_LABEL_WIDTH}
+                    height={EDGE_LABEL_HEIGHT}
+                  >
+                    <LabelInput
+                      className="label-input"
+                      ariaLabel="Edge label"
+                      autoFocus
+                      value={edge.label ?? ''}
+                      onCommit={(label) => void mutate((d) => api.updateEdge(d, edge.id, { label }))}
+                      onDone={stopEditing}
+                    />
+                  </foreignObject>
+                ) : (
+                  edge.label && (
+                    <text x={middle.x} y={middle.y - 6} textAnchor="middle">
+                      {edge.label}
+                    </text>
+                  )
+                )}
+              </g>
+            )
+          })}
 
-        {drag?.copy && <CopyGhosts drag={drag} />}
+          {shapes.map((shape) => {
+            const isSelected = selected.includes(shape.id)
+            // The first selected shape is the align anchor.
+            const isAnchor = selectedShapes.length > 1 && selectedShapes[0] === shape.id
+            const isEditing = editing?.kind === 'shape' && editing.id === shape.id
+            return (
+              <g
+                key={shape.id}
+                className={`shape ${isSelected ? 'selected' : ''} ${isAnchor ? 'anchor' : ''} ${source?.id === shape.id ? 'source' : ''}`}
+              >
+                <rect
+                  x={shape.x}
+                  y={shape.y}
+                  width={shape.width}
+                  height={shape.height}
+                  rx={4}
+                  onPointerDown={(e) => startDrag(e, shape.id, 'move')}
+                  onDoubleClick={() => setEditing({ kind: 'shape', id: shape.id })}
+                />
+                <foreignObject
+                  x={shape.x}
+                  y={shape.y}
+                  width={shape.width}
+                  height={shape.height}
+                  pointerEvents={isEditing ? undefined : 'none'}
+                >
+                  {isEditing ? (
+                    <LabelInput
+                      className="label-input"
+                      ariaLabel="Shape label"
+                      autoFocus
+                      value={shape.label}
+                      onCommit={(label) => label.trim() && void mutate((d) => api.updateShape(d, shape.id, { label }))}
+                      onDone={stopEditing}
+                    />
+                  ) : (
+                    <div className="label">{shape.label}</div>
+                  )}
+                </foreignObject>
+                {isSelected && selected.length === 1 && tool === 'select' && (
+                  <rect
+                    className="handle"
+                    x={shape.x + shape.width - 5}
+                    y={shape.y + shape.height - 5}
+                    width={10}
+                    height={10}
+                    onPointerDown={(e) => startDrag(e, shape.id, 'resize')}
+                  />
+                )}
+              </g>
+            )
+          })}
 
-        {marquee && <rect className="marquee" {...boxOf(marquee.start, marquee.current)} />}
+          {drag?.copy && <CopyGhosts drag={drag} />}
 
-        {source && pointer && (
-          <line className="preview" x1={center(source).x} y1={center(source).y} x2={pointer.x} y2={pointer.y} />
-        )}
+          {marquee && <rect className="marquee" {...boxOf(marquee.start, marquee.current)} />}
+
+          {source && pointer && (
+            <line className="preview" x1={center(source).x} y1={center(source).y} x2={pointer.x} y2={pointer.y} />
+          )}
+        </g>
       </svg>
     </div>
   )
