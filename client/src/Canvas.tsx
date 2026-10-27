@@ -308,18 +308,23 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     return { x: (e.clientX - rect.left - view.x) / view.zoom, y: (e.clientY - rect.top - view.y) / view.zoom }
   }
 
-  function connect(targetId: string) {
+  /** The topmost shape containing the point, if any. */
+  function shapeAt(p: Point) {
+    return [...shapes].reverse().find((s) => p.x >= s.x && p.x <= s.x + s.width && p.y >= s.y && p.y <= s.y + s.height)
+  }
+
+  /** Finishes dragging an edge: releasing on another shape connects it, anywhere else cancels. */
+  function endConnect(p: Point | null) {
     if (!edgeSource) {
-      setEdgeSource(targetId)
-      return
-    }
-    if (edgeSource === targetId) {
       return
     }
     const sourceId = edgeSource
     setEdgeSource(null)
     setPointer(null)
-    void mutate((d) => api.addEdge(d, sourceId, targetId))
+    const target = p && shapeAt(p)
+    if (target && target.id !== sourceId) {
+      void mutate((d) => api.addEdge(d, sourceId, target.id))
+    }
   }
 
   // The shapes a move carries along: the selected ones plus the endpoints of selected edges.
@@ -336,7 +341,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     }
     if (tool === 'edge') {
       if (byId.has(id)) {
-        connect(id)
+        setEdgeSource(id)
+        setPointer(toPoint(e))
       }
       return
     }
@@ -470,7 +476,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     }
   }
 
-  function onPointerUp() {
+  function onPointerUp(e: PointerEvent) {
+    endConnect(e.type === 'pointerup' ? toPoint(e) : null)
     endMarquee()
     void endDrag()
   }
@@ -503,6 +510,9 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   }
 
   const stopEditing = () => setEditing(null)
+
+  const hovered = source && pointer ? shapeAt(pointer) : undefined
+  const dropTarget = hovered?.id !== source?.id ? hovered : undefined
 
   const grid = GRID * view.zoom
 
@@ -596,7 +606,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
             return (
               <g
                 key={shape.id}
-                className={`shape ${isSelected ? 'selected' : ''} ${isAnchor ? 'anchor' : ''} ${source?.id === shape.id ? 'source' : ''}`}
+                className={`shape ${isSelected ? 'selected' : ''} ${isAnchor ? 'anchor' : ''} ${source?.id === shape.id || dropTarget?.id === shape.id ? 'source' : ''}`}
               >
                 <rect
                   x={shape.x}

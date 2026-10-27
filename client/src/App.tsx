@@ -309,7 +309,7 @@ export function App() {
           <header className="toolbar border-bottom px-3 py-2">
             <span className="hint small text-body-secondary">
               {tool === 'edge'
-                ? 'Click the source rectangle, then the target. Repeat for more edges. Esc returns to selection.'
+                ? 'Press on the source rectangle and drag onto the target. Repeat for more edges. Esc returns to selection.'
                 : tool === 'rectangle'
                 ? 'Click on the canvas to place a rectangle. Esc cancels.'
                 : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select rectangles and edges · double-click to rename · Delete removes the selection · wheel or pinch to zoom · drag with the wheel pressed or two fingers on the trackpad to pan · Ctrl/Cmd+S saves'}

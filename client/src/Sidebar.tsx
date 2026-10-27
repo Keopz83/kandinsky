@@ -38,7 +38,7 @@ export function Sidebar(props: Props) {
           type="button"
           className={`btn btn-sm palette-item ${props.tool === 'edge' ? 'btn-primary active' : 'btn-light'}`}
           disabled={!hasDiagram}
-          title="Click the source rectangle, then the target"
+          title="Press on the source rectangle and drag onto the target"
           onClick={() => props.onToolChange(props.tool === 'edge' ? 'select' : 'edge')}
         >
           <svg width="28" height="18" aria-hidden="true">
