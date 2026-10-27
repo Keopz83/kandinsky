@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import { Canvas } from './Canvas'
-import { LabelInput } from './LabelInput'
 import { MenuBar } from './MenuBar'
-import { canPickSaveLocation, download, fileName, formatOf, formats, pickSaveTarget, writeText, type SaveTarget } from './saveFile'
+import { canPickSaveLocation, download, fileName, formatOf, formats, openWritable, pickSaveTarget, writeText, type SaveTarget } from './saveFile'
 import { Sidebar } from './Sidebar'
 import { Tabs } from './Tabs'
 import type { AlignDirection, Diagram, DiagramSummary, Format, Tool } from './types'
@@ -149,10 +148,13 @@ export function App() {
     return () => clearInterval(timer)
   }, [diagramId, load, refreshTabs, open])
 
-  function onRename(name: string) {
-    void mutate(async (id) => {
+  function onRename(id: string, name: string) {
+    void run(async () => {
       await api.rename(id, name)
       await refreshTabs()
+      if (id === diagramId) {
+        await load(id)
+      }
     })
   }
 
@@ -202,7 +204,14 @@ export function App() {
         return
       }
       const format = formatOf(target.name, saveFormat)
-      await writeText(target, await api.exportText(id, format))
+      const writable = await openWritable(target)
+      if (!writable) {
+        saveTargets.current.delete(id)
+        download(target.name, await api.exportText(id, format))
+        setMessage(`The browser does not allow writing to ${target.name} here; downloaded it instead`)
+        return
+      }
+      await writeText(writable, () => api.exportText(id, format))
       saveTargets.current.set(id, target)
       setMessage(`Saved ${target.name} (${formats[format].label})`)
     })
@@ -237,13 +246,8 @@ export function App() {
           onAutoLayout={() => void mutate((id) => api.layout(id))}
         />
         <main className="main">
-          <Tabs diagrams={diagrams} currentId={diagramId} onSelect={(id) => void open(id)} onClose={onClose} onNew={onNew} />
+          <Tabs diagrams={diagrams} currentId={diagramId} onSelect={(id) => void open(id)} onRename={onRename} onClose={onClose} onNew={onNew} />
           <header className="toolbar">
-            {diagram ? (
-              <LabelInput key={`${diagram.id}:${diagram.name}`} className="title" ariaLabel="Diagram name" value={diagram.name} onCommit={onRename} />
-            ) : (
-              <span className="title">No diagram open</span>
-            )}
             <span className="hint">
               {tool === 'edge'
                 ? 'Click the source rectangle, then the target. Repeat for more edges. Esc returns to selection.'

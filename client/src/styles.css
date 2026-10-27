@@ -233,6 +233,17 @@ select:disabled {
   color: var(--muted);
 }
 
+.tab-name-input {
+  width: 160px;
+  margin: 3px 0 3px 6px;
+  padding: 2px 6px;
+  font: inherit;
+  font-weight: 600;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  outline: none;
+}
+
 .tab.active .tab-name {
   color: var(--text);
   font-weight: 600;
@@ -268,20 +279,6 @@ select:disabled {
   border-bottom: 1px solid var(--border);
 }
 
-.toolbar .title {
-  font: inherit;
-  font-weight: 600;
-  padding: 4px 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  min-width: 200px;
-}
-
-.toolbar input.title:hover,
-.toolbar input.title:focus {
-  border-color: var(--border);
-  outline: none;
-}
 
 .label-input {
   width: 100%;

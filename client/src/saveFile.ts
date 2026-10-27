@@ -4,6 +4,7 @@ import type { Format } from './types'
 interface WritableFile {
   write(data: string): Promise<void>
   close(): Promise<void>
+  abort?(): Promise<void>
 }
 
 export interface SaveTarget {
@@ -52,10 +53,30 @@ export async function pickSaveTarget(name: string, defaultFormat: Format): Promi
   }
 }
 
-export async function writeText(target: SaveTarget, text: string) {
-  const writable = await target.createWritable()
-  await writable.write(text)
-  await writable.close()
+/**
+ * Opens the file for writing. Must be called right after the user's click or the picker, before any other await:
+ * the browser may need user activation to grant write access. Returns null if the browser refuses.
+ */
+export async function openWritable(target: SaveTarget): Promise<WritableFile | null> {
+  try {
+    return await target.createWritable()
+  } catch (e) {
+    if (e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
+      return null
+    }
+    throw e
+  }
+}
+
+/** Writes the text into the opened file; on failure the file keeps its previous content. */
+export async function writeText(writable: WritableFile, text: () => Promise<string>) {
+  try {
+    await writable.write(await text())
+    await writable.close()
+  } catch (e) {
+    await writable.abort?.().catch(() => undefined)
+    throw e
+  }
 }
 
 export function download(file: string, text: string) {
