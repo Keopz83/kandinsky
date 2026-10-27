@@ -1,0 +1,31 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Node / React
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# .NET
+bin/
+obj/
+*.user
+TestResults/
+
+# Test output
+test-results/
+playwright-report/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
