@@ -285,7 +285,7 @@ export function App() {
   }
 
   return (
-    <div className="app">
+    <div className="app d-flex flex-column">
       <MenuBar
         hasDiagram={diagram !== null}
         saveFormat={saveFormat}
@@ -295,7 +295,7 @@ export function App() {
         onOpen={onOpen}
         onSaveFormatChange={onSaveFormatChange}
       />
-      <div className="workspace">
+      <div className="workspace d-flex">
         <Sidebar
           hasDiagram={diagram !== null}
           tool={tool}
@@ -305,10 +305,10 @@ export function App() {
           onAlign={(direction: AlignDirection) => void mutate((id) => api.align(id, selectedShapes, direction))}
           onAutoLayout={() => void mutate((id) => api.layout(id))}
         />
-        <main className="main">
+        <main className="main d-flex flex-column">
           <Tabs diagrams={diagrams} currentId={diagramId} onSelect={(id) => void open(id)} onRename={onRename} onClose={onClose} onNew={onNew} />
-          <header className="toolbar">
-            <span className="hint">
+          <header className="toolbar border-bottom px-3 py-2">
+            <span className="hint small text-body-secondary">
               {tool === 'edge'
                 ? 'Click the source rectangle, then the target. Repeat for more edges. Esc returns to selection.'
                 : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select rectangles and edges · double-click to rename · Delete removes the selection · wheel or pinch to zoom · drag with the wheel pressed or two fingers on the trackpad to pan · Ctrl/Cmd+S saves'}
@@ -317,9 +317,9 @@ export function App() {
           {diagram ? (
             <Canvas diagram={diagram} tool={tool} selected={selected} onSelect={setSelection} onToolDone={selectTool} mutate={mutate} />
           ) : (
-            <div className="empty">Create a new whiteboard or open a PlantUML / Mermaid file to get started.</div>
+            <div className="empty d-grid text-body-secondary">Create a new whiteboard or open a PlantUML / Mermaid file to get started.</div>
           )}
-          <footer className={`status ${error ? 'error' : ''}`}>{error || message}</footer>
+          <footer className={`status border-top px-3 py-1 small ${error ? 'text-danger-emphasis bg-danger-subtle' : 'text-body-secondary'}`}>{error || message}</footer>
         </main>
       </div>
     </div>

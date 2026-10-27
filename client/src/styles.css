@@ -1,178 +1,69 @@
+/* Bootstrap provides the base styling; these rules cover layout and the SVG canvas. */
 :root {
-  --border: #d0d4dc;
-  --text: #1f2430;
-  --muted: #6b7280;
-  --accent: #2f6fde;
+  --accent: var(--bs-primary);
   --shape-fill: #fffdf5;
   --shape-stroke: #3a3f4b;
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: 14px;
-  color: var(--text);
-}
-
-* {
-  box-sizing: border-box;
+  --text: var(--bs-body-color);
 }
 
 html,
 body,
 #root {
   height: 100%;
-  margin: 0;
+}
+
+body {
+  font-size: 0.875rem;
 }
 
 .app {
-  display: flex;
-  flex-direction: column;
   height: 100%;
 }
 
 .workspace {
   flex: 1;
-  display: flex;
   min-height: 0;
 }
 
-.menubar {
-  display: flex;
-  align-items: baseline;
-  font-size: 15px;
-  gap: 12px;
-  padding: 4px 12px;
-  border-bottom: 1px solid #c4c9d2;
-  background: #dfe2e7;
-  flex-shrink: 0;
-}
-
-.menubar h1 {
-  margin: 0 8px 0 0;
-  font-size: inherit;
-}
-
-.menubar-menus {
-  display: flex;
-  gap: 2px;
-}
-
-.menubar-menu {
-  position: relative;
+.menubar .menubar-trigger.active,
+.menubar .menubar-trigger:hover {
+  background: var(--bs-secondary-bg-subtle);
 }
 
 .menubar .menubar-trigger {
-  padding: 4px 10px;
   border-color: transparent;
-  background: transparent;
 }
 
-.menubar .menubar-trigger:hover,
-.menubar .menubar-trigger.open {
-  border-color: transparent;
-  background: #c9cdd5;
-}
-
-.dropdown {
-  position: absolute;
+.menubar .dropdown-menu {
+  --bs-dropdown-font-size: 0.875rem;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 10;
-  min-width: 200px;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: white;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
-  display: flex;
-  flex-direction: column;
+  min-width: 220px;
 }
 
-.dropdown button {
-  border: none;
-  border-radius: 4px;
-  padding: 6px 12px;
-}
-
-.dropdown button:hover:not(:disabled) {
-  background: #e8f0ff;
-}
-
-.dropdown .shortcut {
-  float: right;
-  margin-left: 24px;
-  font-family: inherit;
-  color: #6b7280;
-}
-
-.dropdown-heading {
-  padding: 4px 12px;
-  font-size: 12px;
-  color: #6b7280;
-}
-
-.dropdown .check {
+.menubar .check {
   display: inline-block;
   width: 1.2em;
-}
-
-.dropdown hr {
-  margin: 4px 0;
-  border: none;
-  border-top: 1px solid var(--border);
 }
 
 .sidebar {
   width: 210px;
   flex-shrink: 0;
-  padding: 16px 12px;
-  border-right: 1px solid var(--border);
-  background: #f6f7f9;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
 }
 
 .sidebar h2 {
-  margin: 0 0 4px;
-  font-size: 11px;
-  text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
-.palette {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-button,
-select {
-  font: inherit;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: white;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-button:hover:not(:disabled) {
-  border-color: var(--accent);
-}
-
-button:disabled,
-select:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 .palette-item {
   display: flex;
   align-items: center;
   gap: 10px;
+  text-align: left;
 }
 
 .palette-item svg {
+  flex-shrink: 0;
   fill: var(--shape-fill);
   stroke: var(--shape-stroke);
   stroke-width: 1.5;
@@ -188,104 +79,42 @@ select:disabled {
   stroke-dasharray: 2 2;
 }
 
-.palette-item.active {
-  border-color: var(--accent);
-  background: #e8f0ff;
+.palette-item.active svg {
+  stroke: white;
+}
+
+.palette-item.active svg path {
+  fill: white;
+}
+
+.palette-item.active svg .guide {
+  stroke: white;
 }
 
 .main {
   flex: 1;
-  display: flex;
-  flex-direction: column;
   min-width: 0;
 }
 
 .tabs {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  padding: 6px 8px 0;
-  border-bottom: 1px solid var(--border);
-  background: #f6f7f9;
   overflow-x: auto;
+  overflow-y: hidden;
   flex-shrink: 0;
 }
 
 .tab {
-  display: flex;
-  align-items: center;
   max-width: 200px;
-  margin-bottom: -1px;
-  border: 1px solid var(--border);
-  border-radius: 6px 6px 0 0;
-  background: #eceef2;
-}
-
-.tab.active {
-  background: white;
-  border-bottom-color: white;
-}
-
-.tabs button {
-  border: none;
-  border-radius: 6px 6px 0 0;
-  background: transparent;
-}
-
-.tab-name {
-  padding: 6px 4px 6px 12px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--muted);
 }
 
 .tab-name-input {
   width: 160px;
   margin: 3px 0 3px 6px;
-  padding: 2px 6px;
-  font: inherit;
-  font-weight: 600;
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  outline: none;
-}
-
-.tab.active .tab-name {
-  color: var(--text);
-  font-weight: 600;
 }
 
 .tab-close {
-  padding: 2px 8px;
-  color: var(--muted);
-  line-height: 1;
+  font-size: 0.6rem;
+  flex-shrink: 0;
 }
-
-.tabs .tab-close:hover {
-  color: #b42318;
-}
-
-.tab-new {
-  padding: 4px 10px;
-  margin-bottom: 2px;
-  font-size: 16px;
-  line-height: 1;
-  color: var(--muted);
-}
-
-.tabs .tab-new:hover {
-  color: var(--accent);
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border);
-}
-
 
 .label-input {
   width: 100%;
@@ -297,10 +126,6 @@ select:disabled {
   outline: none;
 }
 
-.hint {
-  color: var(--muted);
-  font-size: 12px;
-}
 
 .canvas {
   flex: 1;
@@ -430,20 +255,10 @@ marker .arrow-selected {
 
 .empty {
   flex: 1;
-  display: grid;
   place-items: center;
-  color: var(--muted);
 }
 
 .status {
   min-height: 28px;
-  padding: 6px 16px;
-  border-top: 1px solid var(--border);
-  font-size: 12px;
-  color: var(--muted);
 }
 
-.status.error {
-  color: #b42318;
-  background: #fef3f2;
-}
