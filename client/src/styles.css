@@ -16,8 +16,26 @@ body {
   font-size: 0.875rem;
 }
 
+/* Composition inspired by Kandinsky's "Composition VIII", showing through the
+   transparent menu bar and sidebar; the main area covers the rest. */
 .app {
   height: 100%;
+  background-color: #f6f1e4;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2400' height='1200' viewBox='0 0 2400 1200'%3E%3Cg opacity='0.4'%3E%3Ccircle cx='560' cy='70' r='64' fill='%23e8c547' stroke='%23111' stroke-width='3'/%3E%3Ccircle cx='560' cy='70' r='40' fill='%23d9472b'/%3E%3Ccircle cx='880' cy='21' r='16' fill='%232c4f9e'/%3E%3Ccircle cx='880' cy='21' r='9' fill='%23e8c547'/%3E%3Ccircle cx='880' cy='21' r='3' fill='%23111'/%3E%3Cpath d='M330 2 L1400 40' stroke='%23111' stroke-width='1.2'/%3E%3Cg stroke='%23111' stroke-width='1.5'%3E%3Cpath d='M1040 0 V42'/%3E%3Cpath d='M1052 0 V42'/%3E%3Cpath d='M1064 0 V42'/%3E%3Cpath d='M1076 0 V42'/%3E%3C/g%3E%3Cg fill='%23111'%3E%3Crect x='1200' y='6' width='8' height='8'/%3E%3Crect x='1216' y='6' width='8' height='8'/%3E%3Crect x='1208' y='14' width='8' height='8'/%3E%3Crect x='1224' y='14' width='8' height='8'/%3E%3Crect x='1200' y='22' width='8' height='8'/%3E%3Crect x='1216' y='22' width='8' height='8'/%3E%3C/g%3E%3Cpolygon points='1480,44 1560,-4 1640,44' fill='%23d9472b' stroke='%23111' stroke-width='1.2'/%3E%3Ccircle cx='1760' cy='12' r='5' fill='%23111'/%3E%3Ccircle cx='1900' cy='22' r='15' fill='%237b4fa0' stroke='%23111' stroke-width='2.5'/%3E%3Cpath d='M2060 44 A40 40 0 0 1 2140 44' fill='none' stroke='%232c4f9e' stroke-width='4'/%3E%3Cpath d='M2200 0 L2400 40' stroke='%23111' stroke-width='1'/%3E%3Ccircle cx='2300' cy='20' r='12' fill='%233a8c6e'/%3E%3Ccircle cx='2300' cy='20' r='5' fill='%23d9472b'/%3E%3Cpath d='M440 0 L0 330' stroke='%23111' stroke-width='1.5'/%3E%3Ccircle cx='150' cy='130' r='40' fill='%23e8c547'/%3E%3Ccircle cx='150' cy='130' r='26' fill='%23d9472b'/%3E%3Ccircle cx='150' cy='130' r='12' fill='%232c4f9e'/%3E%3Ccircle cx='150' cy='130' r='40' fill='none' stroke='%23111' stroke-width='3'/%3E%3Ccircle cx='28' cy='80' r='7' fill='%23111'/%3E%3Cpath d='M10 470 L200 190' stroke='%23111' stroke-width='2'/%3E%3Cpath d='M0 275 L210 295' stroke='%23111' stroke-width='1'/%3E%3Cpath d='M30 185 Q100 225 50 275' fill='none' stroke='%23111' stroke-width='1.2'/%3E%3Cpolygon points='20,430 95,335 135,457' fill='%23e8c547' stroke='%23111' stroke-width='1.2'/%3E%3Ccircle cx='55' cy='357' r='28' fill='%237b4fa0' stroke='%23111' stroke-width='2.5'/%3E%3Ccircle cx='176' cy='383' r='18' fill='%233a8c6e'/%3E%3Ccircle cx='176' cy='383' r='8' fill='%23d9472b'/%3E%3Ccircle cx='190' cy='250' r='5' fill='%23d9472b'/%3E%3Cg fill='%23111'%3E%3Crect x='112' y='307' width='7' height='7'/%3E%3Crect x='126' y='307' width='7' height='7'/%3E%3Crect x='119' y='314' width='7' height='7'/%3E%3Crect x='133' y='314' width='7' height='7'/%3E%3Crect x='112' y='321' width='7' height='7'/%3E%3Crect x='126' y='321' width='7' height='7'/%3E%3C/g%3E%3Cpath d='M95 460 A45 45 0 0 1 185 460' fill='none' stroke='%232c4f9e' stroke-width='4'/%3E%3Cpath d='M0 560 L210 520' stroke='%23111' stroke-width='1.2'/%3E%3Ccircle cx='40' cy='640' r='46' fill='%23d9472b' stroke='%23111' stroke-width='2.5'/%3E%3Ccircle cx='40' cy='640' r='20' fill='%23e8c547'/%3E%3Cg stroke='%23111' stroke-width='1.5'%3E%3Cpath d='M130 600 V700'/%3E%3Cpath d='M142 600 V700'/%3E%3Cpath d='M154 600 V700'/%3E%3Cpath d='M166 600 V700'/%3E%3C/g%3E%3Cpath d='M200 560 L20 860' stroke='%23111' stroke-width='1.5'/%3E%3Ccircle cx='160' cy='800' r='34' fill='%232c4f9e' stroke='%23111' stroke-width='2'/%3E%3Ccircle cx='160' cy='800' r='12' fill='%23e8c547'/%3E%3Ccircle cx='30' cy='760' r='6' fill='%23111'/%3E%3Cpolygon points='40,980 120,880 190,990' fill='%233a8c6e' stroke='%23111' stroke-width='1.2'/%3E%3Cg fill='%23111'%3E%3Crect x='20' y='900' width='8' height='8'/%3E%3Crect x='36' y='900' width='8' height='8'/%3E%3Crect x='28' y='908' width='8' height='8'/%3E%3Crect x='44' y='908' width='8' height='8'/%3E%3C/g%3E%3Cpath d='M0 1060 Q105 1000 210 1080' fill='none' stroke='%23111' stroke-width='1.2'/%3E%3Ccircle cx='120' cy='1140' r='28' fill='%23e8c547' stroke='%23111' stroke-width='2.5'/%3E%3Ccircle cx='120' cy='1140' r='12' fill='%237b4fa0'/%3E%3C/g%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left top;
+}
+
+.main {
+  background-color: var(--bs-body-bg);
+}
+
+.palette-panel {
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(3px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
 }
 
 .workspace {

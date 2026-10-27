@@ -77,7 +77,7 @@ export function MenuBar(props: Props) {
   )
 
   return (
-    <header className="menubar navbar bg-body-secondary border-bottom px-3 py-1 justify-content-start">
+    <header className="menubar navbar border-bottom px-3 py-1 justify-content-start">
       <h1 className="navbar-brand fs-6 fw-semibold m-0 me-2">Kandinsky</h1>
       <div className="menubar-menus d-flex gap-1" ref={menus}>
         <div className="dropdown">
