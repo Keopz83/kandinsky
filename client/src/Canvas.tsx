@@ -27,10 +27,13 @@ interface Drag {
   kind: 'move' | 'resize'
   copy: boolean
   start: Point
-  original: Shape
-  current: Shape
+  target: string
+  originals: Shape[]
+  currents: Shape[]
   active: boolean
 }
+
+const unchanged = (a: Shape, b: Shape) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
 
 interface Point {
   x: number
@@ -75,7 +78,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   const [edgeSource, setEdgeSource] = useState<string | null>(null)
   const [pointer, setPointer] = useState<Point | null>(null)
 
-  const shapes = diagram.shapes.map((s) => (drag?.original.id === s.id && !drag.copy ? drag.current : s))
+  const dragged = new Map(drag && !drag.copy ? drag.currents.map((s) => [s.id, s]) : [])
+  const shapes = diagram.shapes.map((s) => dragged.get(s.id) ?? s)
   const byId = new Map(shapes.map((s) => [s.id, s]))
   const source = tool === 'edge' && edgeSource ? byId.get(edgeSource) : undefined
 
@@ -144,8 +148,11 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
       onSelect(selected.includes(shape.id) ? selected.filter((id) => id !== shape.id) : [...selected, shape.id])
       return
     }
-    onSelect([shape.id])
-    setDrag({ kind, copy: kind === 'move' && e.shiftKey, start: toPoint(e), original: shape, current: shape, active: true })
+    const group = kind === 'move' && selected.includes(shape.id) ? shapes.filter((s) => selected.includes(s.id)) : [shape]
+    if (group.length === 1) {
+      onSelect([shape.id])
+    }
+    setDrag({ kind, copy: kind === 'move' && e.shiftKey, start: toPoint(e), target: shape.id, originals: group, currents: group, active: true })
   }
 
   function onPointerMove(e: PointerEvent) {
@@ -159,22 +166,29 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     if (!drag?.active) {
       return
     }
-    const dx = p.x - drag.start.x
-    const dy = p.y - drag.start.y
-    const o = drag.original
-    const current =
-      drag.kind === 'move'
-        ? { ...o, x: Math.max(0, Math.round(o.x + dx)), y: Math.max(0, Math.round(o.y + dy)) }
-        : { ...o, width: Math.max(MIN_SIZE, Math.round(o.width + dx)), height: Math.max(MIN_SIZE, Math.round(o.height + dy)) }
-    setDrag({ ...drag, current })
+    const originals = drag.originals
+    if (drag.kind === 'resize') {
+      const o = originals[0]
+      const width = Math.max(MIN_SIZE, Math.round(o.width + p.x - drag.start.x))
+      const height = Math.max(MIN_SIZE, Math.round(o.height + p.y - drag.start.y))
+      setDrag({ ...drag, currents: [{ ...o, width, height }] })
+      return
+    }
+    // Clamp the group as a whole so the relative layout is preserved at the canvas edge.
+    const dx = Math.max(Math.round(p.x - drag.start.x), -Math.min(...originals.map((s) => s.x)))
+    const dy = Math.max(Math.round(p.y - drag.start.y), -Math.min(...originals.map((s) => s.y)))
+    setDrag({ ...drag, currents: originals.map((o) => ({ ...o, x: o.x + dx, y: o.y + dy })) })
   }
 
   async function endDrag() {
     if (!drag?.active) {
       return
     }
-    const { original: o, current: c } = drag
-    if (c.x === o.x && c.y === o.y && c.width === o.width && c.height === o.height) {
+    const { originals, currents } = drag
+    if (currents.every((c, i) => unchanged(c, originals[i]))) {
+      if (originals.length > 1) {
+        onSelect([drag.target])
+      }
       setDrag(null)
       return
     }
@@ -182,11 +196,19 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     setDrag({ ...drag, active: false })
     if (drag.copy) {
       await mutate(async (d) => {
-        const copy = await api.addShape(d, { label: c.label, x: c.x, y: c.y, width: c.width, height: c.height })
-        onSelect([copy.id])
+        const ids: string[] = []
+        for (const c of currents) {
+          const copy = await api.addShape(d, { label: c.label, x: c.x, y: c.y, width: c.width, height: c.height })
+          ids.push(copy.id)
+        }
+        onSelect(ids)
       })
     } else {
-      await mutate((d) => api.updateShape(d, o.id, { x: c.x, y: c.y, width: c.width, height: c.height }))
+      await mutate(async (d) => {
+        for (const c of currents) {
+          await api.updateShape(d, c.id, { x: c.x, y: c.y, width: c.width, height: c.height })
+        }
+      })
     }
     setDrag(null)
   }
@@ -387,14 +409,15 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
           )
         })}
 
-        {drag?.copy && (
-          <g className="shape ghost" pointerEvents="none">
-            <rect x={drag.current.x} y={drag.current.y} width={drag.current.width} height={drag.current.height} rx={4} />
-            <foreignObject x={drag.current.x} y={drag.current.y} width={drag.current.width} height={drag.current.height}>
-              <div className="label">{drag.current.label}</div>
-            </foreignObject>
-          </g>
-        )}
+        {drag?.copy &&
+          drag.currents.map((c) => (
+            <g key={c.id} className="shape ghost" pointerEvents="none">
+              <rect x={c.x} y={c.y} width={c.width} height={c.height} rx={4} />
+              <foreignObject x={c.x} y={c.y} width={c.width} height={c.height}>
+                <div className="label">{c.label}</div>
+              </foreignObject>
+            </g>
+          ))}
 
         {marquee && <rect className="marquee" {...boxOf(marquee.start, marquee.current)} />}
 

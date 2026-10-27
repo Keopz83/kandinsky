@@ -31,7 +31,7 @@ Open http://localhost:5180.
 - Every diagram on the server is a tab at the top; click a tab to switch, **+** (or **New**) creates an "Untitled" diagram, **×** deletes a diagram after confirmation. Click the name in the toolbar to rename it.
 - **Rectangle**: click to add one in a free spot, or drag it onto the canvas.
 - **Directed edge**: click it, then the source rectangle, then the target. Esc cancels.
-- Drag rectangles to move them, Shift+drag to copy them, drag the corner handle to resize, double-click a rectangle or edge to edit its label, press Delete to remove the selection.
+- Drag rectangles to move them (dragging one of several selected rectangles moves them all), Shift+drag to copy them, drag the corner handle to resize, double-click a rectangle or edge to edit its label, press Delete to remove the selection.
 - **Save** writes the diagram to `server/Kandinsky.Server/data/`. Unsaved diagrams are lost on server restart.
 - Select several rectangles with Ctrl/Cmd+click or by dragging a box on the empty canvas — any rectangle the box touches is selected (Ctrl/Cmd adds to the selection).
 - **Align horizontally / vertically** lines up the selected rectangles on the first selected one (drawn with a thicker border).
