@@ -202,8 +202,24 @@ public sealed class ApiTests : IDisposable
 
         Assert.Equal("Zoo", imported.Name);
         Assert.StartsWith(
-            "---\ntitle: \"Zoo\"\n---\nclassDiagram\n  class Cat[\"Cat\"]\n  class Animal[\"Animal\"]\n  Cat --> Animal : is a\n  %% kandinsky:layout Cat ",
+            "classDiagram\n  class Cat[\"Cat\"]\n  class Animal[\"Animal\"]\n  Cat --> Animal : is a\n  %% kandinsky:layout Cat ",
             mermaid);
+    }
+
+    [Theory]
+    [InlineData("classDiagram\n  A --> B", "shop", "shop")]
+    [InlineData("---\ntitle: Zoo\n---\nclassDiagram\n  A --> B", "shop", "Zoo")]
+    [InlineData("classDiagram\n  A --> B", null, "Imported diagram")]
+    [InlineData("classDiagram\n  A --> B", "  ", "Imported diagram")]
+    public async Task Import_names_the_diagram_after_its_title_else_the_fallback_name(string text, string? fallbackName, string expected)
+    {
+        var client = CreateClient();
+
+        var imported = await Read<Diagram>(
+            await client.PostAsJsonAsync("/api/diagrams/import", new { text, fallbackName }),
+            HttpStatusCode.Created);
+
+        Assert.Equal(expected, imported.Name);
     }
 
     [Fact]

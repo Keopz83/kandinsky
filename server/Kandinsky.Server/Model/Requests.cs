@@ -18,8 +18,11 @@ public sealed record CreateEdgeRequest(string SourceId, string TargetId, string?
 /// <summary>Partial update of an edge. Omitted properties stay unchanged; an empty label removes the label.</summary>
 public sealed record UpdateEdgeRequest(string? Label, string? SourceId, string? TargetId);
 
-/// <summary>Payload for importing a diagram. Format is "plantuml" or "mermaid"; detected from the text when omitted.</summary>
-public sealed record ImportDiagramRequest(string Text, string? Format, string? Name);
+/// <summary>
+/// Payload for importing a diagram. Format is "plantuml" or "mermaid"; detected from the text when omitted.
+/// Name overrides the title in the text; FallbackName (e.g. the file name) is used only when the text has no title.
+/// </summary>
+public sealed record ImportDiagramRequest(string Text, string? Format, string? Name, string? FallbackName = null);
 
 public enum AlignDirection
 {

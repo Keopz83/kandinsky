@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import { Canvas } from './Canvas'
 import { MenuBar } from './MenuBar'
-import { canPickSaveLocation, detectFormat, download, fileName, formatOf, formats, openWritable, pickOpenFile, pickSaveTarget, writeText, type SaveTarget } from './saveFile'
+import { canPickSaveLocation, detectFormat, download, fileName, formatOf, formats, nameOf, openWritable, pickOpenFile, pickSaveTarget, writeText, type SaveTarget } from './saveFile'
 import { Sidebar } from './Sidebar'
 import { Tabs } from './Tabs'
 import type { AlignDirection, Diagram, DiagramSummary, Format, Tool } from './types'
@@ -37,10 +37,11 @@ export function App() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [saveFormat, setSaveFormat] = useState<Format>(storedSaveFormat)
-  // File per whiteboard chosen by Save / Save As or opened from, so a later Save overwrites it without asking.
-  const saveTargets = useRef(new Map<string, { target: SaveTarget; format: Format }>())
-  // Text last saved to or opened from a file per whiteboard; a whiteboard still exporting to it is saved.
-  const savedTexts = useRef(new Map<string, { format: Format; text: string }>())
+  // File per whiteboard chosen by Save / Save As or opened from, so a later Save overwrites it without asking
+  // as long as the whiteboard keeps the name it had then.
+  const saveTargets = useRef(new Map<string, { target: SaveTarget; format: Format; name: string }>())
+  // Text and name last saved to or opened from a file per whiteboard; a whiteboard still matching both is saved.
+  const savedTexts = useRef(new Map<string, { format: Format; text: string; name: string }>())
   // Only the most recently requested diagram state may be shown, so late poll responses can't undo a change.
   const latestRequest = useRef(0)
   // Same for the whiteboard list, so a late poll can't drop a just created tab.
@@ -65,15 +66,15 @@ export function App() {
     }
   }, [])
 
-  const remember = useCallback(async (id: string, format: Format) => {
+  const remember = useCallback(async (id: string, format: Format, name: string) => {
     const text = await api.exportText(id, format)
-    savedTexts.current.set(id, { format, text })
+    savedTexts.current.set(id, { format, text, name })
     return text
   }, [])
 
-  const isSaved = useCallback(async (id: string) => {
+  const isSaved = useCallback(async ({ id, name }: DiagramSummary) => {
     const saved = savedTexts.current.get(id)
-    return saved !== undefined && (await api.exportText(id, saved.format)) === saved.text
+    return saved?.name === name && (await api.exportText(id, saved.format)) === saved.text
   }, [])
 
   const load = useCallback(async (id: string) => {
@@ -161,14 +162,20 @@ export function App() {
     return () => clearInterval(timer)
   }, [diagramId, load, refreshTabs, open])
 
+  async function rename(id: string, current: string, next: string) {
+    if (!next || next === current) {
+      return current
+    }
+    const renamed = await api.rename(id, next)
+    await refreshTabs()
+    if (id === diagramId) {
+      await load(id)
+    }
+    return renamed.name
+  }
+
   function onRename(id: string, name: string) {
-    void run(async () => {
-      await api.rename(id, name)
-      await refreshTabs()
-      if (id === diagramId) {
-        await load(id)
-      }
-    })
+    void run(() => rename(id, '', name))
   }
 
   function onClose(target: DiagramSummary) {
@@ -176,7 +183,7 @@ export function App() {
     const neighbor = diagrams[index + 1] ?? diagrams[index - 1]
     void run(async () => {
       // Saved whiteboards can be reopened from their file, so only unsaved ones need a confirmation.
-      if (!(await isSaved(target.id)) && !window.confirm(`Delete whiteboard "${target.name}"? This cannot be undone.`)) {
+      if (!(await isSaved(target)) && !window.confirm(`Delete whiteboard "${target.name}"? This cannot be undone.`)) {
         return
       }
       // Switch away first, so a concurrent poll doesn't see the open whiteboard vanish.
@@ -202,28 +209,33 @@ export function App() {
       if (!canPickSaveLocation()) {
         // Without the File System Access API the browser decides the location (or asks, depending on its settings).
         const file = fileName(name, saveFormat)
-        download(file, await remember(id, saveFormat))
+        download(file, await remember(id, saveFormat, name))
         setMessage(`Downloaded ${file}`)
         return
       }
       // The picker must open before any other await, while the click still counts as user activation.
-      const known = askForLocation ? undefined : saveTargets.current.get(id)
+      const previous = askForLocation ? undefined : saveTargets.current.get(id)
+      // A renamed whiteboard is saved to a new file named after it, keeping the old file.
+      const known = previous?.name === name ? previous : undefined
       const target = known?.target ?? (await pickSaveTarget(name, saveFormat))
       if (!target) {
         return
       }
       const format = known?.format ?? formatOf(target.name, saveFormat)
       const writable = await openWritable(target)
+      // Files don't store the name: a file name chosen in the dialog becomes the whiteboard's name.
+      const adoptName = async () => (known ? name : rename(id, name, nameOf(target.name)))
       if (!writable) {
         saveTargets.current.delete(id)
-        download(target.name, await remember(id, format))
+        download(target.name, await remember(id, format, await adoptName()))
         setMessage(`The browser does not allow writing to ${target.name} here; downloaded it instead`)
         return
       }
       let text = ''
       await writeText(writable, async () => (text = await api.exportText(id, format)))
-      savedTexts.current.set(id, { format, text })
-      saveTargets.current.set(id, { target, format })
+      const savedName = await adoptName()
+      savedTexts.current.set(id, { format, text, name: savedName })
+      saveTargets.current.set(id, { target, format, name: savedName })
       setMessage(`Saved ${target.name} (${formats[format].label})`)
     })
   }
@@ -252,14 +264,15 @@ export function App() {
         return
       }
       const text = await picked.file.text()
-      const opened = await api.importText(text)
+      // The whiteboard is named after the file, even if the file has a title.
+      const opened = await api.importText(text, nameOf(picked.file.name) || undefined)
       const format = formatOf(picked.file.name, detectFormat(text))
       if (picked.target) {
         // Save writes back to the opened file, in the format it was written in.
-        saveTargets.current.set(opened.id, { target: picked.target, format })
+        saveTargets.current.set(opened.id, { target: picked.target, format, name: opened.name })
       }
       // The file's own text may be formatted differently, so the saved state is what the server exports for it.
-      await remember(opened.id, format)
+      await remember(opened.id, format, opened.name)
       await show(opened)
       setMessage(`Opened ${picked.file.name}`)
     })

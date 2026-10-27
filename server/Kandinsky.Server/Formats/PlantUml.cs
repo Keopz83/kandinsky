@@ -12,7 +12,6 @@ public static partial class PlantUml
     {
         var text = new StringBuilder();
         text.Append("@startuml\n");
-        text.Append("title ").Append(diagram.Name).Append('\n');
         foreach (var shape in diagram.Shapes)
         {
             text.Append($"class \"{shape.Label.Replace('"', '\'')}\" as {shape.Id}\n");

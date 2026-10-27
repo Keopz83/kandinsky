@@ -65,7 +65,7 @@ public static class DiagramEndpoints
             })
             .WithName("ImportDiagram")
             .WithSummary("Create a diagram from PlantUML or Mermaid text")
-            .WithDescription("Supports class diagrams with classes and directed associations. Shapes are laid out in a grid.");
+            .WithDescription("Supports class diagrams with classes and directed associations. Shapes are laid out in a grid. The diagram is named `name`, else the title in the text, else `fallbackName` (e.g. the file name).");
 
         diagrams.MapPost("/{id}/align", (string id, AlignShapesRequest request, DiagramService service) => TypedResults.Ok(service.Align(id, request)))
             .WithTags("Layout")

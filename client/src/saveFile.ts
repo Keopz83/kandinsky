@@ -39,6 +39,11 @@ export const formats: Record<Format, { label: string; extensions: string[] }> = 
 
 export const fileName = (name: string, format: Format) => `${name.replace(/[^\w.-]+/g, '_')}${formats[format].extensions[0]}`
 
+const MAX_NAME_LENGTH = 200
+
+/** Diagram name for a file: "shop.v2.mmd" → "shop.v2". */
+export const nameOf = (file: string) => file.replace(/\.[^.]*$/, '').trim().slice(0, MAX_NAME_LENGTH)
+
 export const canPickSaveLocation = () => typeof window.showSaveFilePicker === 'function'
 
 export const canPickOpenFile = () => typeof window.showOpenFilePicker === 'function'

@@ -254,7 +254,7 @@ public sealed class DiagramService
         var edges = parsed.Edges
             .Select(e => new Edge(NextId(used, "e"), e.SourceId, e.TargetId, ValidEdgeLabel(e.Label)))
             .ToList();
-        var diagram = new Diagram(NewDiagramId(), ValidName(request.Name ?? parsed.Title ?? "Imported diagram"), [], edges);
+        var diagram = new Diagram(NewDiagramId(), ValidName(request.Name ?? parsed.Title ?? NonBlank(request.FallbackName) ?? "Imported diagram"), [], edges);
 
         if (parsed.Shapes.All(s => s.Bounds is null))
         {
@@ -351,6 +351,8 @@ public sealed class DiagramService
     private static string NewDiagramId() => Guid.NewGuid().ToString("N");
 
     private static string ValidName(string name) => ValidText(name, "Name");
+
+    private static string? NonBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
     private static string ValidLabel(string label) => ValidText(label, "Label");
 

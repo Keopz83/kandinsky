@@ -11,9 +11,6 @@ public static partial class Mermaid
     public static string Export(Diagram diagram)
     {
         var text = new StringBuilder();
-        text.Append("---\n");
-        text.Append("title: \"").Append(diagram.Name.Replace('"', '\'')).Append("\"\n");
-        text.Append("---\n");
         text.Append("classDiagram\n");
         foreach (var shape in diagram.Shapes)
         {

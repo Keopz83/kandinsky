@@ -18,7 +18,7 @@ public class FormatTests
         var text = PlantUml.Export(Shop);
 
         Assert.Equal(
-            "@startuml\ntitle Shop\nclass \"Customer\" as s1\nclass \"Order\" as s2\ns1 --> s2 : places\n"
+            "@startuml\nclass \"Customer\" as s1\nclass \"Order\" as s2\ns1 --> s2 : places\n"
                 + "' kandinsky:layout s1 x=0 y=0 width=140 height=60\n' kandinsky:layout s2 x=200 y=0 width=140 height=60\n@enduml\n",
             text);
     }
@@ -29,7 +29,7 @@ public class FormatTests
         var text = Mermaid.Export(Shop);
 
         Assert.Equal(
-            "---\ntitle: \"Shop\"\n---\nclassDiagram\n  class s1[\"Customer\"]\n  class s2[\"Order\"]\n  s1 --> s2 : places\n"
+            "classDiagram\n  class s1[\"Customer\"]\n  class s2[\"Order\"]\n  s1 --> s2 : places\n"
                 + "  %% kandinsky:layout s1 x=0 y=0 width=140 height=60\n  %% kandinsky:layout s2 x=200 y=0 width=140 height=60\n",
             text);
     }
@@ -120,7 +120,7 @@ public class FormatTests
     {
         var parsed = DiagramFormats.Parse(DiagramFormats.Export(Shop, format), format);
 
-        Assert.Equal("Shop", parsed.Title);
+        Assert.Null(parsed.Title);
         Assert.Equal([new("s1", "Customer", new(0, 0, 140, 60)), new("s2", "Order", new(200, 0, 140, 60))], parsed.Shapes);
         Assert.Equal([new("s1", "s2", "places")], parsed.Edges);
     }
