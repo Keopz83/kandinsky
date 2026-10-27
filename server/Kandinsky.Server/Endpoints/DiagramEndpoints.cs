@@ -67,6 +67,18 @@ public static class DiagramEndpoints
             .WithSummary("Create a diagram from PlantUML or Mermaid text")
             .WithDescription("Supports class diagrams with classes and directed associations. Shapes are laid out in a grid.");
 
+        diagrams.MapPost("/{id}/align", (string id, AlignShapesRequest request, DiagramService service) => TypedResults.Ok(service.Align(id, request)))
+            .WithTags("Layout")
+            .WithName("AlignShapes")
+            .WithSummary("Align shapes in a row or column")
+            .WithDescription("`horizontal`: vertical centers match the first shape's. `vertical`: horizontal centers match the first shape's. Returns the updated diagram.");
+
+        diagrams.MapPost("/{id}/layout", (string id, DiagramService service) => TypedResults.Ok(service.AutoLayout(id)))
+            .WithTags("Layout")
+            .WithName("AutoLayout")
+            .WithSummary("Arrange all shapes automatically")
+            .WithDescription("Connected shapes are placed in layers following the edge direction, unconnected shapes in a grid below. Returns the updated diagram.");
+
         var shapes = diagrams.MapGroup("/{id}/shapes").WithTags("Shapes");
 
         shapes.MapPost("/", (string id, CreateShapeRequest request, DiagramService service) =>

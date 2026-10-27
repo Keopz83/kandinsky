@@ -20,3 +20,15 @@ public sealed record UpdateEdgeRequest(string? Label, string? SourceId, string? 
 
 /// <summary>Payload for importing a diagram. Format is "plantuml" or "mermaid"; detected from the text when omitted.</summary>
 public sealed record ImportDiagramRequest(string Text, string? Format, string? Name);
+
+public enum AlignDirection
+{
+    /// <summary>In a row: vertical centers match the first shape's.</summary>
+    Horizontal,
+
+    /// <summary>In a column: horizontal centers match the first shape's.</summary>
+    Vertical,
+}
+
+/// <summary>Payload for aligning shapes. The first shape is the anchor the others are aligned to.</summary>
+public sealed record AlignShapesRequest(IReadOnlyList<string>? ShapeIds, AlignDirection? Direction);

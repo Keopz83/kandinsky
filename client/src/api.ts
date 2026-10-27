@@ -1,4 +1,4 @@
-import type { Diagram, DiagramSummary, Edge, Format, Shape } from './types'
+import type { AlignDirection, Diagram, DiagramSummary, Edge, Format, Shape } from './types'
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(`/api/diagrams${path}`, {
@@ -28,6 +28,9 @@ export const api = {
   save: (id: string) => request<void>('POST', at(id, 'save')),
   exportText: (id: string, format: Format) => request<string>('GET', `${at(id, 'export')}?format=${format}`),
   importText: (text: string) => request<Diagram>('POST', '/import', { text }),
+  align: (id: string, shapeIds: string[], direction: AlignDirection) =>
+    request<Diagram>('POST', at(id, 'align'), { shapeIds, direction }),
+  layout: (id: string) => request<Diagram>('POST', at(id, 'layout')),
 
   addShape: (id: string, shape: Partial<Omit<Shape, 'id'>>) => request<Shape>('POST', at(id, 'shapes'), shape),
   updateShape: (id: string, shapeId: string, patch: Partial<Omit<Shape, 'id'>>) =>

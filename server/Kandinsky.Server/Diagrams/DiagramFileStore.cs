@@ -32,7 +32,14 @@ public sealed partial class DiagramFileStore(string directory)
         File.WriteAllText(PathFor(diagram.Id), JsonSerializer.Serialize(diagram, Options));
     }
 
-    public void Delete(string id) => File.Delete(PathFor(id));
+    public void Delete(string id)
+    {
+        var path = PathFor(id);
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
 
     private string PathFor(string id) =>
         IdPattern().IsMatch(id)

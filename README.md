@@ -19,7 +19,7 @@ See [REQUIREMENTS.md](REQUIREMENTS.md) for requirements, decisions and open poin
 # backend on http://localhost:5080
 cd server/Kandinsky.Server && dotnet run
 
-# frontend on http://localhost:5180 (proxies /api to the backend)
+# frontend on http://localhost:5180 (proxies /api to the backend; override with KANDINSKY_API_URL)
 cd client && npm install && npm run dev
 ```
 
@@ -32,6 +32,9 @@ Open http://localhost:5180.
 - **Directed edge**: click it, then the source rectangle, then the target. Esc cancels.
 - Drag rectangles to move them, Shift+drag to copy them, drag the corner handle to resize, double-click a rectangle or edge to edit its label, press Delete to remove the selection.
 - **Save** writes the diagram to `server/Kandinsky.Server/data/`. Unsaved diagrams are lost on server restart.
+- Select several rectangles with Ctrl/Cmd+click or by dragging a box on the empty canvas (Ctrl/Cmd adds to the selection).
+- **Align horizontally / vertically** lines up the selected rectangles on the first selected one (drawn with a thicker border).
+- **Auto-layout** arranges all rectangles in layers following the edge direction; unconnected ones go in a grid below.
 - Changes made through the API show up in the open diagram within 2 seconds.
 
 ## REST API
@@ -45,6 +48,8 @@ OpenAPI document: http://localhost:5080/openapi/v1.json. Example requests: [Kand
 | POST | `/api/diagrams/{id}/save` | Persist a diagram |
 | GET | `/api/diagrams/{id}/export?format=plantuml\|mermaid` | Export as text |
 | POST | `/api/diagrams/import` | Create a diagram from text (`{ text, format?, name? }`) |
+| POST | `/api/diagrams/{id}/align` | Align shapes (`{ shapeIds, direction: "horizontal" \| "vertical" }`) |
+| POST | `/api/diagrams/{id}/layout` | Auto-layout all shapes |
 | POST | `/api/diagrams/{id}/shapes` | Add a rectangle |
 | GET / PATCH / DELETE | `/api/diagrams/{id}/shapes/{shapeId}` | Get / update / delete a rectangle |
 | POST | `/api/diagrams/{id}/edges` | Add a directed edge |

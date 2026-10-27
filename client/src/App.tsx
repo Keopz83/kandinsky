@@ -3,7 +3,7 @@ import { api } from './api'
 import { Canvas } from './Canvas'
 import { LabelInput } from './LabelInput'
 import { Sidebar } from './Sidebar'
-import type { Diagram, DiagramSummary, Format, Tool } from './types'
+import type { AlignDirection, Diagram, DiagramSummary, Format, Tool } from './types'
 
 const POLL_INTERVAL_MS = 2000
 
@@ -20,11 +20,14 @@ export function App() {
   const [diagram, setDiagram] = useState<Diagram | null>(null)
   const [diagrams, setDiagrams] = useState<DiagramSummary[]>([])
   const [tool, setTool] = useState<Tool>('select')
+  const [selection, setSelection] = useState<string[]>([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   // Only the most recently requested diagram state may be shown, so late poll responses can't undo a change.
   const latestRequest = useRef(0)
   const diagramId = diagram?.id
+  // Shapes may disappear through other clients; ignore those ids.
+  const selected = selection.filter((id) => diagram?.shapes.some((s) => s.id === id))
 
   const run = useCallback(async (action: () => Promise<unknown>, success?: string) => {
     setError('')
@@ -50,6 +53,7 @@ export function App() {
     latestRequest.current++
     setDiagram(next)
     setTool('select')
+    setSelection([])
     window.location.hash = next.id
     setDiagrams(await api.list())
   }, [])
@@ -116,6 +120,9 @@ export function App() {
         onExport={onExport}
         onAddRectangle={() => void mutate((id) => api.addShape(id, {}))}
         onToolChange={setTool}
+        selectedCount={selected.length}
+        onAlign={(direction: AlignDirection) => void mutate((id) => api.align(id, selected, direction))}
+        onAutoLayout={() => void mutate((id) => api.layout(id))}
       />
       <main className="main">
         <header className="toolbar">
@@ -127,11 +134,11 @@ export function App() {
           <span className="hint">
             {tool === 'edge'
               ? 'Click the source rectangle, then the target. Esc cancels.'
-              : 'Drag to move · Shift+drag to copy · drag the corner to resize · double-click to rename · Delete removes the selection'}
+              : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select several · double-click to rename · Delete removes the selection'}
           </span>
         </header>
         {diagram ? (
-          <Canvas diagram={diagram} tool={tool} onToolDone={selectTool} mutate={mutate} />
+          <Canvas diagram={diagram} tool={tool} selected={selected} onSelect={setSelection} onToolDone={selectTool} mutate={mutate} />
         ) : (
           <div className="empty">Create a new diagram or import a PlantUML / Mermaid file to get started.</div>
         )}

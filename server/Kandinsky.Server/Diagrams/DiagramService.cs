@@ -71,8 +71,8 @@ public sealed class DiagramService
         lock (_lock)
         {
             Find(id);
-            _diagrams.Remove(id);
             _files.Delete(id);
+            _diagrams.Remove(id);
         }
     }
 
@@ -190,6 +190,51 @@ public sealed class DiagramService
     }
 
     public string Export(string id, DiagramFormat format) => DiagramFormats.Export(Get(id), format);
+
+    public Diagram Align(string diagramId, AlignShapesRequest request)
+    {
+        var ids = (request.ShapeIds ?? []).Distinct().ToList();
+        if (ids.Count < 2)
+        {
+            throw new DiagramValidationException("Select at least two shapes to align.");
+        }
+        if (request.Direction is not { } direction)
+        {
+            throw new DiagramValidationException("Direction is required: 'horizontal' or 'vertical'.");
+        }
+
+        lock (_lock)
+        {
+            var diagram = Find(diagramId);
+            var missing = ids.FirstOrDefault(id => diagram.Shapes.All(s => s.Id != id));
+            if (missing is not null)
+            {
+                throw new DiagramValidationException($"Shape '{missing}' does not exist in this diagram.");
+            }
+
+            var anchor = diagram.Shapes.First(s => s.Id == ids[0]);
+            var selected = ids.ToHashSet();
+            var shapes = diagram.Shapes
+                .Select(s => !selected.Contains(s.Id) ? s : direction == AlignDirection.Horizontal
+                    ? s with { Y = Math.Max(0, anchor.Y + anchor.Height / 2 - s.Height / 2) }
+                    : s with { X = Math.Max(0, anchor.X + anchor.Width / 2 - s.Width / 2) })
+                .ToList();
+            diagram = diagram with { Shapes = shapes };
+            _diagrams[diagramId] = diagram;
+            return diagram;
+        }
+    }
+
+    public Diagram AutoLayout(string diagramId)
+    {
+        lock (_lock)
+        {
+            var diagram = Find(diagramId);
+            diagram = diagram with { Shapes = DiagramLayout.Arrange(diagram.Shapes, diagram.Edges) };
+            _diagrams[diagramId] = diagram;
+            return diagram;
+        }
+    }
 
     public Diagram Import(ImportDiagramRequest request)
     {

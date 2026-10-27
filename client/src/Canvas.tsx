@@ -17,6 +17,12 @@ export type Mutate = (action: (diagramId: string) => Promise<unknown>) => Promis
 
 type Selection = { kind: 'shape' | 'edge'; id: string } | null
 
+interface Marquee {
+  start: Point
+  current: Point
+  additive: boolean
+}
+
 interface Drag {
   kind: 'move' | 'resize'
   copy: boolean
@@ -34,11 +40,20 @@ interface Point {
 interface Props {
   diagram: Diagram
   tool: Tool
+  selected: string[]
+  onSelect: (shapeIds: string[]) => void
   onToolDone: () => void
   mutate: Mutate
 }
 
 const center = (s: Shape): Point => ({ x: s.x + s.width / 2, y: s.y + s.height / 2 })
+
+const boxOf = (a: Point, b: Point) => ({
+  x: Math.min(a.x, b.x),
+  y: Math.min(a.y, b.y),
+  width: Math.abs(a.x - b.x),
+  height: Math.abs(a.y - b.y),
+})
 
 function borderPoint(s: Shape, toward: Point): Point {
   const c = center(s)
@@ -51,11 +66,12 @@ function borderPoint(s: Shape, toward: Point): Point {
   return { x: c.x + dx * scale, y: c.y + dy * scale }
 }
 
-export function Canvas({ diagram, tool, onToolDone, mutate }: Props) {
+export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
-  const [selection, setSelection] = useState<Selection>(null)
+  const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
   const [editing, setEditing] = useState<Selection>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
+  const [marquee, setMarquee] = useState<Marquee | null>(null)
   const [edgeSource, setEdgeSource] = useState<string | null>(null)
   const [pointer, setPointer] = useState<Point | null>(null)
 
@@ -70,19 +86,29 @@ export function Canvas({ diagram, tool, onToolDone, mutate }: Props) {
       }
       if (e.key === 'Escape') {
         setEdgeSource(null)
-        setSelection(null)
+        setSelectedEdge(null)
+        onSelect([])
         onToolDone()
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selection) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && (selectedEdge || selected.length > 0)) {
         e.preventDefault()
-        setSelection(null)
-        const { kind, id } = selection
-        void mutate((d) => (kind === 'shape' ? api.deleteShape(d, id) : api.deleteEdge(d, id)))
+        const edgeId = selectedEdge
+        const shapeIds = selected
+        setSelectedEdge(null)
+        onSelect([])
+        void mutate(async (d) => {
+          if (edgeId) {
+            await api.deleteEdge(d, edgeId)
+          }
+          for (const id of shapeIds) {
+            await api.deleteShape(d, id)
+          }
+        })
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selection, mutate, onToolDone])
+  }, [selected, selectedEdge, onSelect, mutate, onToolDone])
 
   function toPoint(e: { clientX: number; clientY: number }): Point {
     const rect = svgRef.current!.getBoundingClientRect()
@@ -113,7 +139,12 @@ export function Canvas({ diagram, tool, onToolDone, mutate }: Props) {
       connect(shape.id)
       return
     }
-    setSelection({ kind: 'shape', id: shape.id })
+    setSelectedEdge(null)
+    if (kind === 'move' && (e.ctrlKey || e.metaKey)) {
+      onSelect(selected.includes(shape.id) ? selected.filter((id) => id !== shape.id) : [...selected, shape.id])
+      return
+    }
+    onSelect([shape.id])
     setDrag({ kind, copy: kind === 'move' && e.shiftKey, start: toPoint(e), original: shape, current: shape, active: true })
   }
 
@@ -121,6 +152,9 @@ export function Canvas({ diagram, tool, onToolDone, mutate }: Props) {
     const p = toPoint(e)
     if (source) {
       setPointer(p)
+    }
+    if (marquee) {
+      setMarquee({ ...marquee, current: p })
     }
     if (!drag?.active) {
       return
@@ -149,7 +183,7 @@ export function Canvas({ diagram, tool, onToolDone, mutate }: Props) {
     if (drag.copy) {
       await mutate(async (d) => {
         const copy = await api.addShape(d, { label: c.label, x: c.x, y: c.y, width: c.width, height: c.height })
-        setSelection({ kind: 'shape', id: copy.id })
+        onSelect([copy.id])
       })
     } else {
       await mutate((d) => api.updateShape(d, o.id, { x: c.x, y: c.y, width: c.width, height: c.height }))
@@ -158,10 +192,39 @@ export function Canvas({ diagram, tool, onToolDone, mutate }: Props) {
   }
 
   function onBackgroundPointerDown(e: PointerEvent) {
-    if (e.target === e.currentTarget) {
-      setSelection(null)
-      setEdgeSource(null)
+    if (e.target !== e.currentTarget || e.button !== 0) {
+      return
     }
+    setEdgeSource(null)
+    setSelectedEdge(null)
+    if (tool !== 'select') {
+      return
+    }
+    const additive = e.ctrlKey || e.metaKey
+    if (!additive) {
+      onSelect([])
+    }
+    const p = toPoint(e)
+    setMarquee({ start: p, current: p, additive })
+  }
+
+  function endMarquee() {
+    if (!marquee) {
+      return
+    }
+    setMarquee(null)
+    const box = boxOf(marquee.start, marquee.current)
+    const inside = shapes
+      .filter((s) => s.x >= box.x && s.y >= box.y && s.x + s.width <= box.x + box.width && s.y + s.height <= box.y + box.height)
+      .map((s) => s.id)
+    if (inside.length > 0) {
+      onSelect(marquee.additive ? [...selected, ...inside.filter((id) => !selected.includes(id))] : inside)
+    }
+  }
+
+  function onPointerUp() {
+    endMarquee()
+    void endDrag()
   }
 
   function onDragOver(e: DragEvent) {
@@ -195,8 +258,9 @@ export function Canvas({ diagram, tool, onToolDone, mutate }: Props) {
         height={height}
         onPointerDown={onBackgroundPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerLeave={endDrag}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
+        onContextMenu={(e) => e.ctrlKey && e.preventDefault()}
         onDragOver={onDragOver}
         onDrop={onDrop}
       >
@@ -217,7 +281,7 @@ export function Canvas({ diagram, tool, onToolDone, mutate }: Props) {
           const start = borderPoint(from, center(to))
           const end = borderPoint(to, center(from))
           const middle = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
-          const selected = selection?.kind === 'edge' && selection.id === edge.id
+          const selected = selectedEdge === edge.id
           const isEditing = editing?.kind === 'edge' && editing.id === edge.id
           return (
             <g
@@ -226,7 +290,8 @@ export function Canvas({ diagram, tool, onToolDone, mutate }: Props) {
               onPointerDown={(e) => {
                 e.stopPropagation()
                 if (tool === 'select') {
-                  setSelection({ kind: 'edge', id: edge.id })
+                  setSelectedEdge(edge.id)
+                  onSelect([])
                 }
               }}
               onDoubleClick={() => setEditing({ kind: 'edge', id: edge.id })}
@@ -268,10 +333,14 @@ export function Canvas({ diagram, tool, onToolDone, mutate }: Props) {
         })}
 
         {shapes.map((shape) => {
-          const selected = selection?.kind === 'shape' && selection.id === shape.id
+          const isSelected = selected.includes(shape.id)
+          const isAnchor = selected.length > 1 && selected[0] === shape.id
           const isEditing = editing?.kind === 'shape' && editing.id === shape.id
           return (
-            <g key={shape.id} className={`shape ${selected ? 'selected' : ''} ${source?.id === shape.id ? 'source' : ''}`}>
+            <g
+              key={shape.id}
+              className={`shape ${isSelected ? 'selected' : ''} ${isAnchor ? 'anchor' : ''} ${source?.id === shape.id ? 'source' : ''}`}
+            >
               <rect
                 x={shape.x}
                 y={shape.y}
@@ -301,7 +370,7 @@ export function Canvas({ diagram, tool, onToolDone, mutate }: Props) {
                   <div className="label">{shape.label}</div>
                 )}
               </foreignObject>
-              {selected && tool === 'select' && (
+              {isSelected && selected.length === 1 && tool === 'select' && (
                 <rect
                   className="handle"
                   x={shape.x + shape.width - 5}
@@ -323,6 +392,8 @@ export function Canvas({ diagram, tool, onToolDone, mutate }: Props) {
             </foreignObject>
           </g>
         )}
+
+        {marquee && <rect className="marquee" {...boxOf(marquee.start, marquee.current)} />}
 
         {source && pointer && (
           <line className="preview" x1={center(source).x} y1={center(source).y} x2={pointer.x} y2={pointer.y} />

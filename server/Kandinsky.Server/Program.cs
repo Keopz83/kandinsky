@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Kandinsky.Server.Diagrams;
 using Kandinsky.Server.Endpoints;
@@ -12,6 +13,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict;
     options.SerializerOptions.AllowDuplicateProperties = false;
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
 });
 builder.Services.AddSingleton(sp =>
 {

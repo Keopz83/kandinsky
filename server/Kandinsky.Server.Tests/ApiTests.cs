@@ -109,6 +109,18 @@ public sealed class ApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Deletes_unsaved_diagram()
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+
+        var response = await client.DeleteAsync($"/api/diagrams/{diagram.Id}");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/diagrams/{diagram.Id}")).StatusCode);
+    }
+
+    [Fact]
     public async Task Saved_diagram_survives_restart()
     {
         var client = CreateClient();
@@ -124,6 +136,59 @@ public sealed class ApiTests : IDisposable
         var loaded = await restarted.GetFromJsonAsync<Diagram>($"/api/diagrams/{diagram.Id}");
         Assert.Equal("A", Assert.Single(loaded!.Shapes).Label);
     }
+
+    [Fact]
+    public async Task Aligns_shapes_on_the_first_shape()
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+        var anchor = await Read<Shape>(await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/shapes", new { label = "A", x = 100, y = 100, width = 140, height = 60 }), HttpStatusCode.Created);
+        var other = await Read<Shape>(await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/shapes", new { label = "B", x = 400, y = 300, width = 100, height = 100 }), HttpStatusCode.Created);
+
+        var aligned = await Read<Diagram>(
+            await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/align", new { shapeIds = new[] { anchor.Id, other.Id }, direction = "horizontal" }),
+            HttpStatusCode.OK);
+
+        Assert.Equal([anchor, other with { Y = 80 }], aligned.Shapes);
+
+        aligned = await Read<Diagram>(
+            await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/align", new { shapeIds = new[] { anchor.Id, other.Id }, direction = "vertical" }),
+            HttpStatusCode.OK);
+
+        Assert.Equal([anchor, other with { X = 120, Y = 80 }], aligned.Shapes);
+    }
+
+    [Fact]
+    public async Task Rejects_align_with_fewer_than_two_shapes()
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+        var a = await Read<Shape>(await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/shapes", new { label = "A" }), HttpStatusCode.Created);
+
+        var problem = await Read<ProblemDetails>(
+            await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/align", new { shapeIds = new[] { a.Id }, direction = "vertical" }),
+            HttpStatusCode.BadRequest);
+
+        Assert.Equal("Select at least two shapes to align.", problem.Detail);
+    }
+
+    [Fact]
+    public async Task Auto_layout_arranges_all_shapes()
+    {
+        var client = CreateClient();
+        var imported = await Read<Diagram>(
+            await client.PostAsJsonAsync("/api/diagrams/import", new { text = "classDiagram\n  C --> B\n  B --> A\n  class Lonely" }),
+            HttpStatusCode.Created);
+
+        var laidOut = await Read<Diagram>(await client.PostAsync($"/api/diagrams/{imported.Id}/layout", null), HttpStatusCode.OK);
+
+        var y = laidOut.Shapes.ToDictionary(s => s.Id, s => s.Y);
+        Assert.True(y["C"] < y["B"] && y["B"] < y["A"] && y["A"] < y["Lonely"]);
+        Assert.Equal(laidOut, await client.GetFromJsonAsync<Diagram>($"/api/diagrams/{imported.Id}"), DiagramComparer);
+    }
+
+    private static readonly IEqualityComparer<Diagram?> DiagramComparer = EqualityComparer<Diagram?>.Create(
+        (a, b) => a is not null && b is not null && a.Id == b.Id && a.Shapes.SequenceEqual(b.Shapes) && a.Edges.SequenceEqual(b.Edges));
 
     [Fact]
     public async Task Imports_and_exports_text()

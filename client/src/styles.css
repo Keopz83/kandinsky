@@ -108,6 +108,11 @@ select:disabled {
   stroke: none;
 }
 
+.palette-item svg .guide {
+  stroke: var(--accent);
+  stroke-dasharray: 2 2;
+}
+
 .palette-item.active {
   border-color: var(--accent);
   background: #e8f0ff;
@@ -188,6 +193,17 @@ select:disabled {
 .shape.source rect {
   stroke: var(--accent);
   stroke-width: 2;
+}
+
+.shape.anchor > rect:first-child {
+  stroke-width: 3.5;
+}
+
+.marquee {
+  fill: rgba(47, 111, 222, 0.08);
+  stroke: var(--accent);
+  stroke-dasharray: 4 3;
+  pointer-events: none;
 }
 
 .shape rect.handle {
