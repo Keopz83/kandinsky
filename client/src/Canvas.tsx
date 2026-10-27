@@ -1,0 +1,333 @@
+import { useEffect, useRef, useState } from 'react'
+import type { DragEvent, PointerEvent } from 'react'
+import { api } from './api'
+import { LabelInput } from './LabelInput'
+import type { Diagram, Shape, Tool } from './types'
+
+export const SHAPE_MIME = 'application/x-kandinsky-shape'
+
+const MIN_SIZE = 20
+const DEFAULT_WIDTH = 140
+const DEFAULT_HEIGHT = 60
+const MARGIN = 400
+const EDGE_LABEL_WIDTH = 160
+const EDGE_LABEL_HEIGHT = 28
+
+export type Mutate = (action: (diagramId: string) => Promise<unknown>) => Promise<void>
+
+type Selection = { kind: 'shape' | 'edge'; id: string } | null
+
+interface Drag {
+  kind: 'move' | 'resize'
+  copy: boolean
+  start: Point
+  original: Shape
+  current: Shape
+  active: boolean
+}
+
+interface Point {
+  x: number
+  y: number
+}
+
+interface Props {
+  diagram: Diagram
+  tool: Tool
+  onToolDone: () => void
+  mutate: Mutate
+}
+
+const center = (s: Shape): Point => ({ x: s.x + s.width / 2, y: s.y + s.height / 2 })
+
+function borderPoint(s: Shape, toward: Point): Point {
+  const c = center(s)
+  const dx = toward.x - c.x
+  const dy = toward.y - c.y
+  if (dx === 0 && dy === 0) {
+    return c
+  }
+  const scale = Math.min(s.width / 2 / Math.abs(dx), s.height / 2 / Math.abs(dy))
+  return { x: c.x + dx * scale, y: c.y + dy * scale }
+}
+
+export function Canvas({ diagram, tool, onToolDone, mutate }: Props) {
+  const svgRef = useRef<SVGSVGElement>(null)
+  const [selection, setSelection] = useState<Selection>(null)
+  const [editing, setEditing] = useState<Selection>(null)
+  const [drag, setDrag] = useState<Drag | null>(null)
+  const [edgeSource, setEdgeSource] = useState<string | null>(null)
+  const [pointer, setPointer] = useState<Point | null>(null)
+
+  const shapes = diagram.shapes.map((s) => (drag?.original.id === s.id && !drag.copy ? drag.current : s))
+  const byId = new Map(shapes.map((s) => [s.id, s]))
+  const source = tool === 'edge' && edgeSource ? byId.get(edgeSource) : undefined
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) {
+        return
+      }
+      if (e.key === 'Escape') {
+        setEdgeSource(null)
+        setSelection(null)
+        onToolDone()
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selection) {
+        e.preventDefault()
+        setSelection(null)
+        const { kind, id } = selection
+        void mutate((d) => (kind === 'shape' ? api.deleteShape(d, id) : api.deleteEdge(d, id)))
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [selection, mutate, onToolDone])
+
+  function toPoint(e: { clientX: number; clientY: number }): Point {
+    const rect = svgRef.current!.getBoundingClientRect()
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+  }
+
+  function connect(targetId: string) {
+    if (!edgeSource) {
+      setEdgeSource(targetId)
+      return
+    }
+    if (edgeSource === targetId) {
+      return
+    }
+    const sourceId = edgeSource
+    setEdgeSource(null)
+    setPointer(null)
+    onToolDone()
+    void mutate((d) => api.addEdge(d, sourceId, targetId))
+  }
+
+  function startDrag(e: PointerEvent, shape: Shape, kind: Drag['kind']) {
+    e.stopPropagation()
+    if (e.button !== 0) {
+      return
+    }
+    if (tool === 'edge') {
+      connect(shape.id)
+      return
+    }
+    setSelection({ kind: 'shape', id: shape.id })
+    setDrag({ kind, copy: kind === 'move' && e.shiftKey, start: toPoint(e), original: shape, current: shape, active: true })
+  }
+
+  function onPointerMove(e: PointerEvent) {
+    const p = toPoint(e)
+    if (source) {
+      setPointer(p)
+    }
+    if (!drag?.active) {
+      return
+    }
+    const dx = p.x - drag.start.x
+    const dy = p.y - drag.start.y
+    const o = drag.original
+    const current =
+      drag.kind === 'move'
+        ? { ...o, x: Math.max(0, Math.round(o.x + dx)), y: Math.max(0, Math.round(o.y + dy)) }
+        : { ...o, width: Math.max(MIN_SIZE, Math.round(o.width + dx)), height: Math.max(MIN_SIZE, Math.round(o.height + dy)) }
+    setDrag({ ...drag, current })
+  }
+
+  async function endDrag() {
+    if (!drag?.active) {
+      return
+    }
+    const { original: o, current: c } = drag
+    if (c.x === o.x && c.y === o.y && c.width === o.width && c.height === o.height) {
+      setDrag(null)
+      return
+    }
+    // Keep showing the dragged geometry until the server state has been reloaded.
+    setDrag({ ...drag, active: false })
+    if (drag.copy) {
+      await mutate(async (d) => {
+        const copy = await api.addShape(d, { label: c.label, x: c.x, y: c.y, width: c.width, height: c.height })
+        setSelection({ kind: 'shape', id: copy.id })
+      })
+    } else {
+      await mutate((d) => api.updateShape(d, o.id, { x: c.x, y: c.y, width: c.width, height: c.height }))
+    }
+    setDrag(null)
+  }
+
+  function onBackgroundPointerDown(e: PointerEvent) {
+    if (e.target === e.currentTarget) {
+      setSelection(null)
+      setEdgeSource(null)
+    }
+  }
+
+  function onDragOver(e: DragEvent) {
+    if (e.dataTransfer.types.includes(SHAPE_MIME)) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    }
+  }
+
+  function onDrop(e: DragEvent) {
+    if (!e.dataTransfer.types.includes(SHAPE_MIME)) {
+      return
+    }
+    e.preventDefault()
+    const p = toPoint(e)
+    const x = Math.max(0, Math.round(p.x - DEFAULT_WIDTH / 2))
+    const y = Math.max(0, Math.round(p.y - DEFAULT_HEIGHT / 2))
+    void mutate((d) => api.addShape(d, { x, y }))
+  }
+
+  const stopEditing = () => setEditing(null)
+
+  const width = Math.max(0, ...shapes.map((s) => s.x + s.width)) + MARGIN
+  const height = Math.max(0, ...shapes.map((s) => s.y + s.height)) + MARGIN
+
+  return (
+    <div className={`canvas ${tool === 'edge' ? 'connecting' : ''}`}>
+      <svg
+        ref={svgRef}
+        width={width}
+        height={height}
+        onPointerDown={onBackgroundPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerLeave={endDrag}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+      >
+        <defs>
+          {['arrow', 'arrow-selected'].map((id) => (
+            <marker key={id} id={id} viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" className={id} />
+            </marker>
+          ))}
+        </defs>
+
+        {diagram.edges.map((edge) => {
+          const from = byId.get(edge.sourceId)
+          const to = byId.get(edge.targetId)
+          if (!from || !to) {
+            return null
+          }
+          const start = borderPoint(from, center(to))
+          const end = borderPoint(to, center(from))
+          const middle = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
+          const selected = selection?.kind === 'edge' && selection.id === edge.id
+          const isEditing = editing?.kind === 'edge' && editing.id === edge.id
+          return (
+            <g
+              key={edge.id}
+              className={`edge ${selected ? 'selected' : ''}`}
+              onPointerDown={(e) => {
+                e.stopPropagation()
+                if (tool === 'select') {
+                  setSelection({ kind: 'edge', id: edge.id })
+                }
+              }}
+              onDoubleClick={() => setEditing({ kind: 'edge', id: edge.id })}
+            >
+              <line className="hit" x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
+              <line
+                className="line"
+                x1={start.x}
+                y1={start.y}
+                x2={end.x}
+                y2={end.y}
+                markerEnd={`url(#${selected ? 'arrow-selected' : 'arrow'})`}
+              />
+              {isEditing ? (
+                <foreignObject
+                  x={middle.x - EDGE_LABEL_WIDTH / 2}
+                  y={middle.y - EDGE_LABEL_HEIGHT / 2}
+                  width={EDGE_LABEL_WIDTH}
+                  height={EDGE_LABEL_HEIGHT}
+                >
+                  <LabelInput
+                    className="label-input"
+                    ariaLabel="Edge label"
+                    autoFocus
+                    value={edge.label ?? ''}
+                    onCommit={(label) => void mutate((d) => api.updateEdge(d, edge.id, { label }))}
+                    onDone={stopEditing}
+                  />
+                </foreignObject>
+              ) : (
+                edge.label && (
+                  <text x={middle.x} y={middle.y - 6} textAnchor="middle">
+                    {edge.label}
+                  </text>
+                )
+              )}
+            </g>
+          )
+        })}
+
+        {shapes.map((shape) => {
+          const selected = selection?.kind === 'shape' && selection.id === shape.id
+          const isEditing = editing?.kind === 'shape' && editing.id === shape.id
+          return (
+            <g key={shape.id} className={`shape ${selected ? 'selected' : ''} ${source?.id === shape.id ? 'source' : ''}`}>
+              <rect
+                x={shape.x}
+                y={shape.y}
+                width={shape.width}
+                height={shape.height}
+                rx={4}
+                onPointerDown={(e) => startDrag(e, shape, 'move')}
+                onDoubleClick={() => setEditing({ kind: 'shape', id: shape.id })}
+              />
+              <foreignObject
+                x={shape.x}
+                y={shape.y}
+                width={shape.width}
+                height={shape.height}
+                pointerEvents={isEditing ? undefined : 'none'}
+              >
+                {isEditing ? (
+                  <LabelInput
+                    className="label-input"
+                    ariaLabel="Shape label"
+                    autoFocus
+                    value={shape.label}
+                    onCommit={(label) => label.trim() && void mutate((d) => api.updateShape(d, shape.id, { label }))}
+                    onDone={stopEditing}
+                  />
+                ) : (
+                  <div className="label">{shape.label}</div>
+                )}
+              </foreignObject>
+              {selected && tool === 'select' && (
+                <rect
+                  className="handle"
+                  x={shape.x + shape.width - 5}
+                  y={shape.y + shape.height - 5}
+                  width={10}
+                  height={10}
+                  onPointerDown={(e) => startDrag(e, shape, 'resize')}
+                />
+              )}
+            </g>
+          )
+        })}
+
+        {drag?.copy && (
+          <g className="shape ghost" pointerEvents="none">
+            <rect x={drag.current.x} y={drag.current.y} width={drag.current.width} height={drag.current.height} rx={4} />
+            <foreignObject x={drag.current.x} y={drag.current.y} width={drag.current.width} height={drag.current.height}>
+              <div className="label">{drag.current.label}</div>
+            </foreignObject>
+          </g>
+        )}
+
+        {source && pointer && (
+          <line className="preview" x1={center(source).x} y1={center(source).y} x2={pointer.x} y2={pointer.y} />
+        )}
+      </svg>
+    </div>
+  )
+}

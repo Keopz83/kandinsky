@@ -1,0 +1,281 @@
+:root {
+  --border: #d0d4dc;
+  --text: #1f2430;
+  --muted: #6b7280;
+  --accent: #2f6fde;
+  --shape-fill: #fffdf5;
+  --shape-stroke: #3a3f4b;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  color: var(--text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+.app {
+  display: flex;
+  height: 100%;
+}
+
+.sidebar {
+  width: 210px;
+  flex-shrink: 0;
+  padding: 16px 12px;
+  border-right: 1px solid var(--border);
+  background: #f6f7f9;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sidebar h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.sidebar h2 {
+  margin: 0 0 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.menu,
+.palette {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+button,
+select {
+  font: inherit;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: white;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled,
+select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.export {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.export span {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.palette-item svg {
+  fill: var(--shape-fill);
+  stroke: var(--shape-stroke);
+  stroke-width: 1.5;
+}
+
+.palette-item svg path {
+  fill: var(--shape-stroke);
+  stroke: none;
+}
+
+.palette-item.active {
+  border-color: var(--accent);
+  background: #e8f0ff;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar .title {
+  font: inherit;
+  font-weight: 600;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  min-width: 200px;
+}
+
+.toolbar input.title:hover,
+.toolbar input.title:focus {
+  border-color: var(--border);
+  outline: none;
+}
+
+.label-input {
+  width: 100%;
+  height: 100%;
+  font: inherit;
+  text-align: center;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  outline: none;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.canvas {
+  flex: 1;
+  overflow: auto;
+  background-color: white;
+  background-image: radial-gradient(#dde1e8 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.canvas svg {
+  display: block;
+  min-width: 100%;
+  min-height: 100%;
+  user-select: none;
+}
+
+.canvas.connecting .shape rect {
+  cursor: crosshair;
+}
+
+.shape rect {
+  fill: var(--shape-fill);
+  stroke: var(--shape-stroke);
+  stroke-width: 1.5;
+  cursor: move;
+}
+
+.shape.selected rect,
+.shape.source rect {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.shape rect.handle {
+  fill: var(--accent);
+  stroke: white;
+  cursor: nwse-resize;
+}
+
+.shape.ghost {
+  opacity: 0.6;
+}
+
+.shape.ghost rect {
+  stroke: var(--accent);
+  stroke-dasharray: 4 3;
+}
+
+.shape .label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 4px 8px;
+  overflow: hidden;
+  text-align: center;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.edge {
+  cursor: pointer;
+}
+
+.edge .hit {
+  stroke: transparent;
+  stroke-width: 12;
+}
+
+.edge .line {
+  stroke: var(--shape-stroke);
+  stroke-width: 1.5;
+}
+
+.edge.selected .line {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.edge text {
+  font-size: 12px;
+  fill: var(--text);
+  paint-order: stroke;
+  stroke: white;
+  stroke-width: 4px;
+}
+
+marker .arrow {
+  fill: var(--shape-stroke);
+}
+
+marker .arrow-selected {
+  fill: var(--accent);
+}
+
+.preview {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+  pointer-events: none;
+}
+
+.empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.status {
+  min-height: 28px;
+  padding: 6px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.status.error {
+  color: #b42318;
+  background: #fef3f2;
+}

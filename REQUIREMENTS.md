@@ -48,12 +48,21 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - **R-UI-4** The user connects two rectangles with a directed edge from the palette.
 - **R-UI-5** The user can move, resize, relabel and delete rectangles and edges on the canvas.
 - **R-UI-6** Every change in the UI is sent to the server; the canvas shows the state returned by the server.
+- **R-UI-7** Dragging a rectangle with Shift held creates a copy (same label and size) at the drop position; the original stays in place. Edges are not copied.
+
+## Decisions (first implementation)
+
+- Backend: ASP.NET Core minimal API (.NET 10), OpenAPI at `/openapi/v1.json`. Frontend: React + Vite + TypeScript, SVG canvas.
+- Persistence: diagrams live in server memory; **Save** writes them as JSON files (`Storage:Path`, default `data/`), loaded on startup.
+- Import/export: class diagram subset — classes (PlantUML also `interface`, `enum`, `abstract`, `rectangle`) and directed associations (`-->`, `..>`, reversed `<--`, `<..`) with optional labels. Class members and other relation types are rejected with a line-numbered error.
+- Imported diagrams are laid out in a grid; shapes added without a position are placed in the first free grid slot.
+- Live updates: the UI polls the open diagram every 2 seconds.
+- Self-referencing edges are rejected.
 
 ## Open points
 
-- Backend technology (e.g. ASP.NET Core or Node.js).
-- Persistence (in-memory, file, database).
 - Which UML element types beyond rectangles and directed edges (classes with attributes/methods, interfaces, association types such as inheritance/composition).
-- Layout of imported diagrams (PlantUML/Mermaid text carries no coordinates).
-- Live updates in the UI when the diagram is changed via the API (e.g. polling, SSE, WebSocket).
+- Better layout of imported diagrams; keeping positions across export/import.
+- Push-based live updates (SSE/WebSocket) instead of polling.
 - Authentication / multi-user support.
+- An MCP server on top of the REST API.

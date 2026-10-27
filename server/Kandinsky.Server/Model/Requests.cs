@@ -1,0 +1,22 @@
+namespace Kandinsky.Server.Model;
+
+/// <summary>Payload for creating a diagram.</summary>
+public sealed record CreateDiagramRequest(string? Name);
+
+/// <summary>Payload for renaming a diagram.</summary>
+public sealed record UpdateDiagramRequest(string Name);
+
+/// <summary>Payload for adding a rectangle. Without a position the server places it in a free spot.</summary>
+public sealed record CreateShapeRequest(string? Label, double? X, double? Y, double? Width, double? Height);
+
+/// <summary>Partial update of a rectangle. Omitted properties stay unchanged.</summary>
+public sealed record UpdateShapeRequest(string? Label, double? X, double? Y, double? Width, double? Height);
+
+/// <summary>Payload for adding a directed edge between two existing rectangles.</summary>
+public sealed record CreateEdgeRequest(string SourceId, string TargetId, string? Label);
+
+/// <summary>Partial update of an edge. Omitted properties stay unchanged; an empty label removes the label.</summary>
+public sealed record UpdateEdgeRequest(string? Label, string? SourceId, string? TargetId);
+
+/// <summary>Payload for importing a diagram. Format is "plantuml" or "mermaid"; detected from the text when omitted.</summary>
+public sealed record ImportDiagramRequest(string Text, string? Format, string? Name);

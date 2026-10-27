@@ -1,0 +1,309 @@
+using Kandinsky.Server.Formats;
+using Kandinsky.Server.Model;
+
+namespace Kandinsky.Server.Diagrams;
+
+/// <summary>Owns the diagram state. All changes to diagrams go through this service.</summary>
+public sealed class DiagramService
+{
+    public const double DefaultWidth = 140;
+    public const double DefaultHeight = 60;
+    private const double MinSize = 20;
+    private const double MaxCoordinate = 100_000;
+    private const int MaxTextLength = 200;
+    private const int MaxImportLength = 1_000_000;
+    private const int GridColumns = 5;
+    private const double GridX = 200;
+    private const double GridY = 120;
+    private const double GridOrigin = 40;
+
+    private readonly Lock _lock = new();
+    private readonly Dictionary<string, Diagram> _diagrams;
+    private readonly DiagramFileStore _files;
+
+    public DiagramService(DiagramFileStore files)
+    {
+        _files = files;
+        _diagrams = files.LoadAll().ToDictionary(d => d.Id);
+    }
+
+    public IReadOnlyList<DiagramSummary> List()
+    {
+        lock (_lock)
+        {
+            return _diagrams.Values
+                .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(d => new DiagramSummary(d.Id, d.Name))
+                .ToList();
+        }
+    }
+
+    public Diagram Get(string id)
+    {
+        lock (_lock)
+        {
+            return Find(id);
+        }
+    }
+
+    public Diagram Create(string? name)
+    {
+        var diagram = new Diagram(NewDiagramId(), ValidName(name ?? "Untitled"), [], []);
+        lock (_lock)
+        {
+            _diagrams[diagram.Id] = diagram;
+        }
+        return diagram;
+    }
+
+    public Diagram Rename(string id, string name)
+    {
+        lock (_lock)
+        {
+            var diagram = Find(id) with { Name = ValidName(name) };
+            _diagrams[id] = diagram;
+            return diagram;
+        }
+    }
+
+    public void Delete(string id)
+    {
+        lock (_lock)
+        {
+            Find(id);
+            _diagrams.Remove(id);
+            _files.Delete(id);
+        }
+    }
+
+    public void Save(string id)
+    {
+        lock (_lock)
+        {
+            _files.Save(Find(id));
+        }
+    }
+
+    public Shape GetShape(string diagramId, string shapeId)
+    {
+        lock (_lock)
+        {
+            return FindShape(Find(diagramId), shapeId);
+        }
+    }
+
+    public Shape AddShape(string diagramId, CreateShapeRequest request)
+    {
+        lock (_lock)
+        {
+            var diagram = Find(diagramId);
+            var width = ValidSize(request.Width ?? DefaultWidth, "Width");
+            var height = ValidSize(request.Height ?? DefaultHeight, "Height");
+            var (x, y) = request.X is null || request.Y is null
+                ? FreePosition(diagram, width, height)
+                : (ValidCoordinate(request.X.Value, "X"), ValidCoordinate(request.Y.Value, "Y"));
+            var shape = new Shape(NextId(diagram, "s"), ValidLabel(request.Label ?? "Class"), x, y, width, height);
+            _diagrams[diagramId] = diagram with { Shapes = [.. diagram.Shapes, shape] };
+            return shape;
+        }
+    }
+
+    public Shape UpdateShape(string diagramId, string shapeId, UpdateShapeRequest request)
+    {
+        lock (_lock)
+        {
+            var diagram = Find(diagramId);
+            var shape = FindShape(diagram, shapeId);
+            var updated = shape with
+            {
+                Label = request.Label is null ? shape.Label : ValidLabel(request.Label),
+                X = request.X is null ? shape.X : ValidCoordinate(request.X.Value, "X"),
+                Y = request.Y is null ? shape.Y : ValidCoordinate(request.Y.Value, "Y"),
+                Width = request.Width is null ? shape.Width : ValidSize(request.Width.Value, "Width"),
+                Height = request.Height is null ? shape.Height : ValidSize(request.Height.Value, "Height"),
+            };
+            _diagrams[diagramId] = diagram with { Shapes = diagram.Shapes.Select(s => s.Id == shapeId ? updated : s).ToList() };
+            return updated;
+        }
+    }
+
+    public void DeleteShape(string diagramId, string shapeId)
+    {
+        lock (_lock)
+        {
+            var diagram = Find(diagramId);
+            FindShape(diagram, shapeId);
+            _diagrams[diagramId] = diagram with
+            {
+                Shapes = diagram.Shapes.Where(s => s.Id != shapeId).ToList(),
+                Edges = diagram.Edges.Where(e => e.SourceId != shapeId && e.TargetId != shapeId).ToList(),
+            };
+        }
+    }
+
+    public Edge GetEdge(string diagramId, string edgeId)
+    {
+        lock (_lock)
+        {
+            return FindEdge(Find(diagramId), edgeId);
+        }
+    }
+
+    public Edge AddEdge(string diagramId, CreateEdgeRequest request)
+    {
+        lock (_lock)
+        {
+            var diagram = Find(diagramId);
+            ValidateEndpoints(diagram, request.SourceId, request.TargetId);
+            var edge = new Edge(NextId(diagram, "e"), request.SourceId, request.TargetId, ValidEdgeLabel(request.Label));
+            _diagrams[diagramId] = diagram with { Edges = [.. diagram.Edges, edge] };
+            return edge;
+        }
+    }
+
+    public Edge UpdateEdge(string diagramId, string edgeId, UpdateEdgeRequest request)
+    {
+        lock (_lock)
+        {
+            var diagram = Find(diagramId);
+            var edge = FindEdge(diagram, edgeId);
+            var updated = edge with
+            {
+                SourceId = request.SourceId ?? edge.SourceId,
+                TargetId = request.TargetId ?? edge.TargetId,
+                Label = request.Label is null ? edge.Label : ValidEdgeLabel(request.Label),
+            };
+            ValidateEndpoints(diagram, updated.SourceId, updated.TargetId);
+            _diagrams[diagramId] = diagram with { Edges = diagram.Edges.Select(e => e.Id == edgeId ? updated : e).ToList() };
+            return updated;
+        }
+    }
+
+    public void DeleteEdge(string diagramId, string edgeId)
+    {
+        lock (_lock)
+        {
+            var diagram = Find(diagramId);
+            FindEdge(diagram, edgeId);
+            _diagrams[diagramId] = diagram with { Edges = diagram.Edges.Where(e => e.Id != edgeId).ToList() };
+        }
+    }
+
+    public string Export(string id, DiagramFormat format) => DiagramFormats.Export(Get(id), format);
+
+    public Diagram Import(ImportDiagramRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Text))
+        {
+            throw new DiagramValidationException("Import text must not be empty.");
+        }
+        if (request.Text.Length > MaxImportLength)
+        {
+            throw new DiagramValidationException($"Import text must not exceed {MaxImportLength} characters.");
+        }
+
+        var format = request.Format is null ? DiagramFormats.Detect(request.Text) : DiagramFormats.Parse(request.Format);
+        var parsed = DiagramFormats.Parse(request.Text.Replace("\r\n", "\n"), format);
+
+        var shapes = parsed.Shapes
+            .Select((s, i) => new Shape(s.Id, ValidLabel(s.Label), GridOrigin + i % GridColumns * GridX, GridOrigin + i / GridColumns * GridY, DefaultWidth, DefaultHeight))
+            .ToList();
+        var diagram = new Diagram(NewDiagramId(), ValidName(request.Name ?? parsed.Title ?? "Imported diagram"), shapes, []);
+        var used = shapes.Select(s => s.Id).ToHashSet();
+        var edges = parsed.Edges
+            .Select(e => new Edge(NextId(used, "e"), e.SourceId, e.TargetId, ValidEdgeLabel(e.Label)))
+            .ToList();
+        diagram = diagram with { Edges = edges };
+
+        lock (_lock)
+        {
+            _diagrams[diagram.Id] = diagram;
+        }
+        return diagram;
+    }
+
+    private Diagram Find(string id) =>
+        _diagrams.TryGetValue(id, out var diagram) ? diagram : throw new NotFoundException($"Diagram '{id}' not found.");
+
+    private static Shape FindShape(Diagram diagram, string shapeId) =>
+        diagram.Shapes.FirstOrDefault(s => s.Id == shapeId) ?? throw new NotFoundException($"Shape '{shapeId}' not found.");
+
+    private static Edge FindEdge(Diagram diagram, string edgeId) =>
+        diagram.Edges.FirstOrDefault(e => e.Id == edgeId) ?? throw new NotFoundException($"Edge '{edgeId}' not found.");
+
+    private static void ValidateEndpoints(Diagram diagram, string? sourceId, string? targetId)
+    {
+        if (string.IsNullOrEmpty(sourceId) || string.IsNullOrEmpty(targetId))
+        {
+            throw new DiagramValidationException("Edge source and target are required.");
+        }
+        if (sourceId == targetId)
+        {
+            throw new DiagramValidationException("Edge source and target must be different shapes.");
+        }
+        foreach (var id in new[] { sourceId, targetId })
+        {
+            if (diagram.Shapes.All(s => s.Id != id))
+            {
+                throw new DiagramValidationException($"Shape '{id}' does not exist in this diagram.");
+            }
+        }
+    }
+
+    private static (double X, double Y) FreePosition(Diagram diagram, double width, double height)
+    {
+        for (var slot = 0; ; slot++)
+        {
+            var x = GridOrigin + slot % GridColumns * GridX;
+            var y = GridOrigin + slot / GridColumns * GridY;
+            var overlaps = diagram.Shapes.Any(s => x < s.X + s.Width && s.X < x + width && y < s.Y + s.Height && s.Y < y + height);
+            if (!overlaps)
+            {
+                return (x, y);
+            }
+        }
+    }
+
+    private static string NextId(Diagram diagram, string prefix) =>
+        NextId(diagram.Shapes.Select(s => s.Id).Concat(diagram.Edges.Select(e => e.Id)).ToHashSet(), prefix);
+
+    private static string NextId(HashSet<string> used, string prefix)
+    {
+        for (var n = 1; ; n++)
+        {
+            var id = prefix + n;
+            if (used.Add(id))
+            {
+                return id;
+            }
+        }
+    }
+
+    private static string NewDiagramId() => Guid.NewGuid().ToString("N");
+
+    private static string ValidName(string name) => ValidText(name, "Name");
+
+    private static string ValidLabel(string label) => ValidText(label, "Label");
+
+    private static string? ValidEdgeLabel(string? label) => string.IsNullOrWhiteSpace(label) ? null : ValidText(label, "Label");
+
+    private static string ValidText(string value, string field)
+    {
+        var text = string.Join(' ', value.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)).Trim();
+        if (text.Length == 0)
+        {
+            throw new DiagramValidationException($"{field} must not be empty.");
+        }
+        if (text.Length > MaxTextLength)
+        {
+            throw new DiagramValidationException($"{field} must not exceed {MaxTextLength} characters.");
+        }
+        return text;
+    }
+
+    private static double ValidSize(double value, string field) =>
+        value is >= MinSize and <= MaxCoordinate ? value : throw new DiagramValidationException($"{field} must be between {MinSize} and {MaxCoordinate}.");
+
+    private static double ValidCoordinate(double value, string field) =>
+        value is >= 0 and <= MaxCoordinate ? value : throw new DiagramValidationException($"{field} must be between 0 and {MaxCoordinate}.");
+}

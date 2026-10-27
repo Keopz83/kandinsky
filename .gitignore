@@ -25,6 +25,9 @@ TestResults/
 test-results/
 playwright-report/
 
+# Saved diagrams
+server/Kandinsky.Server/data/
+
 # Environment / secrets
 .env
 .env.*

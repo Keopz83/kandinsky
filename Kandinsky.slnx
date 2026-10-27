@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="server/Kandinsky.Server/Kandinsky.Server.csproj" />
+  <Project Path="server/Kandinsky.Server.Tests/Kandinsky.Server.Tests.csproj" />
+</Solution>

@@ -1,0 +1,49 @@
+@baseUrl = http://localhost:5080
+
+### List diagrams
+GET {{baseUrl}}/api/diagrams
+
+### Create a diagram
+# @name create
+POST {{baseUrl}}/api/diagrams
+Content-Type: application/json
+
+{ "name": "Shop" }
+
+### Add a shape (server picks a free position)
+# @name order
+POST {{baseUrl}}/api/diagrams/{{create.response.body.id}}/shapes
+Content-Type: application/json
+
+{ "label": "Order" }
+
+### Add a second shape at a given position
+# @name customer
+POST {{baseUrl}}/api/diagrams/{{create.response.body.id}}/shapes
+Content-Type: application/json
+
+{ "label": "Customer", "x": 300, "y": 40 }
+
+### Connect them
+POST {{baseUrl}}/api/diagrams/{{create.response.body.id}}/edges
+Content-Type: application/json
+
+{ "sourceId": "{{customer.response.body.id}}", "targetId": "{{order.response.body.id}}", "label": "places" }
+
+### Export as PlantUML
+GET {{baseUrl}}/api/diagrams/{{create.response.body.id}}/export?format=plantuml
+
+### Export as Mermaid
+GET {{baseUrl}}/api/diagrams/{{create.response.body.id}}/export?format=mermaid
+
+### Save
+POST {{baseUrl}}/api/diagrams/{{create.response.body.id}}/save
+
+### Import (format detected)
+POST {{baseUrl}}/api/diagrams/import
+Content-Type: application/json
+
+{ "text": "classDiagram\n  class A[\"Animal\"]\n  class D[\"Dog\"]\n  D --> A : is a" }
+
+### OpenAPI document
+GET {{baseUrl}}/openapi/v1.json
