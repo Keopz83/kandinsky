@@ -33,7 +33,7 @@ Open http://localhost:5180.
 - **Directed edge**: click it, then the source rectangle, then the target. Esc cancels.
 - Drag rectangles to move them, Shift+drag to copy them, drag the corner handle to resize, double-click a rectangle or edge to edit its label, press Delete to remove the selection.
 - **Save** writes the diagram to `server/Kandinsky.Server/data/`. Unsaved diagrams are lost on server restart.
-- Select several rectangles with Ctrl/Cmd+click or by dragging a box on the empty canvas (Ctrl/Cmd adds to the selection).
+- Select several rectangles with Ctrl/Cmd+click or by dragging a box on the empty canvas — any rectangle the box touches is selected (Ctrl/Cmd adds to the selection).
 - **Align horizontally / vertically** lines up the selected rectangles on the first selected one (drawn with a thicker border).
 - **Auto-layout** arranges all rectangles in layers following the edge direction; unconnected ones go in a grid below.
 - Changes made through the API show up in the open diagram within 2 seconds.

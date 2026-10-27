@@ -49,7 +49,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - **R-UI-5** The user can move, resize, relabel and delete rectangles and edges on the canvas.
 - **R-UI-6** Every change in the UI is sent to the server; the canvas shows the state returned by the server.
 - **R-UI-7** Dragging a rectangle with Shift held creates a copy (same label and size) at the drop position; the original stays in place. Edges are not copied.
-- **R-UI-8** The user selects multiple rectangles with Ctrl/Cmd+click (toggles a rectangle) or by dragging a selection box on the empty canvas (selects the rectangles fully inside the box; with Ctrl/Cmd held the box adds to the selection).
+- **R-UI-8** The user selects multiple rectangles with Ctrl/Cmd+click (toggles a rectangle) or by dragging a selection box on the empty canvas (selects every rectangle the box touches, even partially; with Ctrl/Cmd held the box adds to the selection).
 - **R-UI-9** An align tool lines up the selected rectangles (at least two):
   - **horizontally** — in a row, all vertical centers on the first selected rectangle's center;
   - **vertically** — in a column, all horizontal centers on the first selected rectangle's center.

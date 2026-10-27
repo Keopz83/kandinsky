@@ -214,8 +214,11 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     }
     setMarquee(null)
     const box = boxOf(marquee.start, marquee.current)
+    if (box.width === 0 && box.height === 0) {
+      return
+    }
     const inside = shapes
-      .filter((s) => s.x >= box.x && s.y >= box.y && s.x + s.width <= box.x + box.width && s.y + s.height <= box.y + box.height)
+      .filter((s) => s.x <= box.x + box.width && s.x + s.width >= box.x && s.y <= box.y + box.height && s.y + s.height >= box.y)
       .map((s) => s.id)
     if (inside.length > 0) {
       onSelect(marquee.additive ? [...selected, ...inside.filter((id) => !selected.includes(id))] : inside)
