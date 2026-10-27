@@ -130,7 +130,6 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     const sourceId = edgeSource
     setEdgeSource(null)
     setPointer(null)
-    onToolDone()
     void mutate((d) => api.addEdge(d, sourceId, targetId))
   }
 

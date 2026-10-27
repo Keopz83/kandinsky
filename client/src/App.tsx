@@ -204,7 +204,7 @@ export function App() {
           )}
           <span className="hint">
             {tool === 'edge'
-              ? 'Click the source rectangle, then the target. Esc cancels.'
+              ? 'Click the source rectangle, then the target. Repeat for more edges. Esc returns to selection.'
               : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select several · double-click to rename · Delete removes the selection'}
           </span>
         </header>
