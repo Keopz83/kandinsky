@@ -4,7 +4,6 @@ import type { AlignDirection, Tool } from './types'
 interface Props {
   hasDiagram: boolean
   tool: Tool
-  onAddRectangle: () => void
   onToolChange: (tool: Tool) => void
   selectedShapeCount: number
   onAlign: (direction: AlignDirection) => void
@@ -20,11 +19,11 @@ export function Sidebar(props: Props) {
         <h2 className="small text-uppercase fw-semibold text-body-secondary mb-1">Palette</h2>
         <button
           type="button"
-          className="btn btn-sm btn-outline-secondary palette-item"
+          className={`btn btn-sm palette-item ${props.tool === 'rectangle' ? 'btn-primary active' : 'btn-light'}`}
           disabled={!hasDiagram}
           draggable={hasDiagram}
-          title="Click or drag onto the canvas"
-          onClick={props.onAddRectangle}
+          title="Click, then click on the canvas to place it, or drag onto the canvas"
+          onClick={() => props.onToolChange(props.tool === 'rectangle' ? 'select' : 'rectangle')}
           onDragStart={(e) => {
             e.dataTransfer.setData(SHAPE_MIME, 'rectangle')
             e.dataTransfer.effectAllowed = 'copy'
@@ -37,7 +36,7 @@ export function Sidebar(props: Props) {
         </button>
         <button
           type="button"
-          className={`btn btn-sm palette-item ${props.tool === 'edge' ? 'btn-primary active' : 'btn-outline-secondary'}`}
+          className={`btn btn-sm palette-item ${props.tool === 'edge' ? 'btn-primary active' : 'btn-light'}`}
           disabled={!hasDiagram}
           title="Click the source rectangle, then the target"
           onClick={() => props.onToolChange(props.tool === 'edge' ? 'select' : 'edge')}
@@ -54,7 +53,7 @@ export function Sidebar(props: Props) {
         <h2 className="small text-uppercase fw-semibold text-body-secondary mb-1">Arrange</h2>
         <button
           type="button"
-          className="btn btn-sm btn-outline-secondary palette-item"
+          className="btn btn-sm btn-light palette-item"
           disabled={props.selectedShapeCount < 2}
           title="Line up the selected rectangles in a row, centered on the first selected one"
           onClick={() => props.onAlign('horizontal')}
@@ -69,7 +68,7 @@ export function Sidebar(props: Props) {
         </button>
         <button
           type="button"
-          className="btn btn-sm btn-outline-secondary palette-item"
+          className="btn btn-sm btn-light palette-item"
           disabled={props.selectedShapeCount < 2}
           title="Line up the selected rectangles in a column, centered on the first selected one"
           onClick={() => props.onAlign('vertical')}
@@ -84,7 +83,7 @@ export function Sidebar(props: Props) {
         </button>
         <button
           type="button"
-          className="btn btn-sm btn-outline-secondary palette-item"
+          className="btn btn-sm btn-light palette-item"
           disabled={!hasDiagram}
           title="Arrange all rectangles following the edge direction"
           onClick={props.onAutoLayout}

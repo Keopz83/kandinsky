@@ -299,7 +299,6 @@ export function App() {
         <Sidebar
           hasDiagram={diagram !== null}
           tool={tool}
-          onAddRectangle={() => void mutate((id) => api.addShape(id, {}))}
           onToolChange={setTool}
           selectedShapeCount={selectedShapes.length}
           onAlign={(direction: AlignDirection) => void mutate((id) => api.align(id, selectedShapes, direction))}
@@ -311,6 +310,8 @@ export function App() {
             <span className="hint small text-body-secondary">
               {tool === 'edge'
                 ? 'Click the source rectangle, then the target. Repeat for more edges. Esc returns to selection.'
+                : tool === 'rectangle'
+                ? 'Click on the canvas to place a rectangle. Esc cancels.'
                 : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select rectangles and edges · double-click to rename · Delete removes the selection · wheel or pinch to zoom · drag with the wheel pressed or two fingers on the trackpad to pan · Ctrl/Cmd+S saves'}
             </span>
           </header>

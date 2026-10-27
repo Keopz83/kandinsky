@@ -30,4 +30,4 @@ export type Format = 'plantuml' | 'mermaid'
 
 export type AlignDirection = 'horizontal' | 'vertical'
 
-export type Tool = 'select' | 'edge'
+export type Tool = 'select' | 'rectangle' | 'edge'

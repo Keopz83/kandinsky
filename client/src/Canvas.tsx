@@ -340,6 +340,10 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
       }
       return
     }
+    if (tool === 'rectangle') {
+      placeRectangle(e)
+      return
+    }
     if (kind === 'move' && (e.ctrlKey || e.metaKey)) {
       onSelect(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id])
       return
@@ -423,6 +427,10 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
       return
     }
     setEdgeSource(null)
+    if (tool === 'rectangle') {
+      placeRectangle(e)
+      return
+    }
     if (tool !== 'select') {
       return
     }
@@ -474,15 +482,24 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     }
   }
 
+  /** Adds a rectangle centered on the given client position and selects it. */
+  function placeRectangle(e: { clientX: number; clientY: number }) {
+    const p = toPoint(e)
+    const x = Math.max(0, Math.round(p.x - DEFAULT_WIDTH / 2))
+    const y = Math.max(0, Math.round(p.y - DEFAULT_HEIGHT / 2))
+    onToolDone()
+    void mutate(async (d) => {
+      const shape = await api.addShape(d, { x, y })
+      onSelect([shape.id])
+    })
+  }
+
   function onDrop(e: DragEvent) {
     if (!e.dataTransfer.types.includes(SHAPE_MIME)) {
       return
     }
     e.preventDefault()
-    const p = toPoint(e)
-    const x = Math.max(0, Math.round(p.x - DEFAULT_WIDTH / 2))
-    const y = Math.max(0, Math.round(p.y - DEFAULT_HEIGHT / 2))
-    void mutate((d) => api.addShape(d, { x, y }))
+    placeRectangle(e)
   }
 
   const stopEditing = () => setEditing(null)
@@ -491,7 +508,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
 
   return (
     <div
-      className={`canvas ${tool === 'edge' ? 'connecting' : ''} ${pan || touchPan ? 'panning' : ''}`}
+      className={`canvas ${tool === 'edge' ? 'connecting' : ''} ${tool === 'rectangle' ? 'placing' : ''} ${pan || touchPan ? 'panning' : ''}`}
       onPointerDownCapture={onPanStart}
       onPointerMoveCapture={onPanMove}
       onPointerUpCapture={onPanEnd}

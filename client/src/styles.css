@@ -30,8 +30,16 @@ body {
   background: var(--bs-secondary-bg-subtle);
 }
 
-.menubar .menubar-trigger {
-  border-color: transparent;
+/* R-UI-21: buttons have solid backgrounds and no borders. */
+.btn {
+  --bs-btn-border-width: 0;
+}
+
+.palette-item.btn-light {
+  --bs-btn-bg: var(--bs-secondary-bg);
+  --bs-btn-hover-bg: #dde0e3;
+  --bs-btn-active-bg: #ced4da;
+  --bs-btn-disabled-bg: var(--bs-secondary-bg);
 }
 
 .menubar .dropdown-menu {
@@ -149,7 +157,9 @@ body {
   cursor: grabbing !important;
 }
 
-.canvas.connecting .shape rect {
+.canvas.connecting .shape rect,
+.canvas.placing svg,
+.canvas.placing svg * {
   cursor: crosshair;
 }
 

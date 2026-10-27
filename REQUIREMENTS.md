@@ -46,7 +46,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - **R-UI-2** A palette of shapes in the left menu containing:
   - a basic rectangle,
   - a directed edge to connect two rectangles.
-- **R-UI-3** The user adds a rectangle to the canvas from the palette.
+- **R-UI-3** The user adds a rectangle to the canvas from the palette. Clicking the palette's rectangle button selects the rectangle tool (shown as active, like the directed edge tool) and does not add a rectangle yet; the next click on the canvas places a rectangle centered there, selects it and returns to selection. Clicking the button again or Esc cancels. Dragging the button onto the canvas places a rectangle at the drop position.
 - **R-UI-4** The user connects two rectangles with a directed edge from the palette.
 - **R-UI-5** The user can move, resize, relabel and delete rectangles and edges on the canvas.
 - **R-UI-6** Every change in the UI is sent to the server; the canvas shows the state returned by the server.
@@ -66,6 +66,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - **R-UI-18** Keyboard shortcuts: Ctrl+S (Cmd+S on macOS) runs **Save**, Ctrl+Shift+S (Cmd+Shift+S) runs **Save As**. The browser's own save-page action is suppressed. The File menu shows the shortcuts.
 - **R-UI-19** Trackpad gestures on the whiteboard (as on macOS): moving two fingers drags (pans) the whiteboard in any direction; pinching zooms, centered on the pointer. A mouse wheel keeps zooming (R-UI-15). On touch screens, moving two fingers also pans.
 - **R-UI-20** The UI uses Bootstrap CSS styling (menu bar, drop-down menus, palette buttons, tabs, form fields, status bar).
+- **R-UI-21** Buttons use solid backgrounds and no borders.
 
 ## Decisions (first implementation)
 
