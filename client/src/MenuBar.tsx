@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { formats } from './saveFile'
+import { canPickOpenFile, formats } from './saveFile'
 import type { Format } from './types'
 
 type Menu = 'file' | 'settings'
@@ -10,7 +10,8 @@ interface Props {
   onNew: () => void
   onSave: () => void
   onSaveAs: () => void
-  onImport: (file: File) => void
+  /** Called without a file when the browser offers a file picker that App opens itself. */
+  onImport: (file?: File) => void
   onExport: (format: Format) => void
   onSaveFormatChange: (format: Format) => void
 }
@@ -81,7 +82,7 @@ export function MenuBar(props: Props) {
               {item('Save', props.onSave, !hasDiagram)}
               {item('Save As…', props.onSaveAs, !hasDiagram)}
               <hr />
-              {item('Import…', () => fileInput.current?.click())}
+              {item('Import…', () => (canPickOpenFile() ? props.onImport() : fileInput.current?.click()))}
               <hr />
               {item('Export as PlantUML', () => props.onExport('plantuml'), !hasDiagram)}
               {item('Export as Mermaid', () => props.onExport('mermaid'), !hasDiagram)}

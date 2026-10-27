@@ -17,9 +17,18 @@ interface SavePickerOptions {
   types?: { description: string; accept: Record<string, string[]> }[]
 }
 
+interface OpenedFile extends SaveTarget {
+  getFile(): Promise<File>
+}
+
+interface OpenPickerOptions {
+  types?: { description: string; accept: Record<string, string[]> }[]
+}
+
 declare global {
   interface Window {
     showSaveFilePicker?: (options?: SavePickerOptions) => Promise<SaveTarget>
+    showOpenFilePicker?: (options?: OpenPickerOptions) => Promise<OpenedFile[]>
   }
 }
 
@@ -31,6 +40,17 @@ export const formats: Record<Format, { label: string; extensions: string[] }> = 
 export const fileName = (name: string, format: Format) => `${name.replace(/[^\w.-]+/g, '_')}${formats[format].extensions[0]}`
 
 export const canPickSaveLocation = () => typeof window.showSaveFilePicker === 'function'
+
+export const canPickOpenFile = () => typeof window.showOpenFilePicker === 'function'
+
+/** Same rule as the server: PlantUML starts with @startuml, everything else is treated as Mermaid. */
+export function detectFormat(text: string): Format {
+  const firstLine = text
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l.length > 0 && !l.startsWith("'"))
+  return firstLine?.startsWith('@startuml') ? 'plantuml' : 'mermaid'
+}
 
 export function formatOf(file: string, fallback: Format): Format {
   const lower = file.toLowerCase()
@@ -45,6 +65,21 @@ export async function pickSaveTarget(name: string, defaultFormat: Format): Promi
       suggestedName: fileName(name, defaultFormat),
       types: order.map((f) => ({ description: formats[f].label, accept: { 'text/plain': formats[f].extensions } })),
     })
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      return null
+    }
+    throw e
+  }
+}
+
+/** Opens the import dialog; the returned target lets Save overwrite the imported file. Returns null if the user cancels. */
+export async function pickOpenFile(): Promise<{ file: File; target: SaveTarget } | null> {
+  try {
+    const [handle] = await window.showOpenFilePicker!({
+      types: [{ description: 'PlantUML / Mermaid', accept: { 'text/plain': [...formats.plantuml.extensions, ...formats.mermaid.extensions, '.txt'] } }],
+    })
+    return { file: await handle.getFile(), target: handle }
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') {
       return null

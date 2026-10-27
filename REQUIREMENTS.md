@@ -40,7 +40,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 
 - **R-UI-1** A header menu bar at the top of the application with a **File** drop-down menu containing all file operations:
   - **New** — create an empty diagram.
-  - **Save** — save the current diagram to a file. The first Save of a diagram opens a dialog to choose the location (and format); further Saves overwrite that file without asking.
+  - **Save** — save the current diagram to a file. The first Save of a diagram opens a dialog to choose the location (and format); further Saves overwrite that file without asking. A diagram imported from a file is saved back to that file (in its format) without asking, even on the first Save.
   - **Save As** — always opens the dialog to save the current diagram to a new location.
   - **Export** — download the diagram as PlantUML or Mermaid.
   - **Import** — load a PlantUML or Mermaid file/text as a diagram.
@@ -69,7 +69,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 
 - Backend: ASP.NET Core minimal API (.NET 10), OpenAPI at `/openapi/v1.json`. Frontend: React + Vite + TypeScript, SVG canvas.
 - Persistence: diagrams live in server memory. The API endpoint `POST /api/diagrams/{id}/save` writes them as JSON files (`Storage:Path`, default `data/`), loaded on startup; the UI does not use it.
-- Save / Save As write PlantUML or Mermaid with layout comments (R-IO-6), so saved files are reopened with Import. The format follows the extension chosen in the dialog; the default save format is offered first. The dialog uses the browser's File System Access API (Chrome, Edge); other browsers download the file in the default format. If the browser refuses write access to the chosen file, it is downloaded instead and the next Save asks again. The default save format is stored in the browser (`localStorage`).
+- Save / Save As write PlantUML or Mermaid with layout comments (R-IO-6), so saved files are reopened with Import. The format follows the extension chosen in the dialog; the default save format is offered first. The dialog uses the browser's File System Access API (Chrome, Edge); other browsers download the file in the default format. Import uses the same API's open dialog so that Save can write back to the imported file; the format of an imported file follows its extension, or its content for other extensions (e.g. `.txt`). Browsers without it import through a regular file input, and the first Save asks for a location. If the browser refuses write access to the chosen file, it is downloaded instead and the next Save asks again. The default save format is stored in the browser (`localStorage`).
 - Import/export: class diagram subset — classes (PlantUML also `interface`, `enum`, `abstract`, `rectangle`) and directed associations (`-->`, `..>`, reversed `<--`, `<..`) with optional labels. Class members and other relation types are rejected with a line-numbered error.
 - Imported diagrams keep the layout from their layout comments, otherwise they are auto-laid out (R-IO-7); shapes added without a position are placed in the first free grid slot.
 - Live updates: the UI polls the open diagram and the diagram list (tabs) every 2 seconds.

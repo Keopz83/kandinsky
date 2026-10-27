@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import { Canvas } from './Canvas'
 import { MenuBar } from './MenuBar'
-import { canPickSaveLocation, download, fileName, formatOf, formats, openWritable, pickSaveTarget, writeText, type SaveTarget } from './saveFile'
+import { canPickSaveLocation, detectFormat, download, fileName, formatOf, formats, openWritable, pickOpenFile, pickSaveTarget, writeText, type SaveTarget } from './saveFile'
 import { Sidebar } from './Sidebar'
 import { Tabs } from './Tabs'
 import type { AlignDirection, Diagram, DiagramSummary, Format, Tool } from './types'
@@ -37,8 +37,8 @@ export function App() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [saveFormat, setSaveFormat] = useState<Format>(storedSaveFormat)
-  // File chosen per whiteboard by Save / Save As, so a later Save overwrites it without asking again.
-  const saveTargets = useRef(new Map<string, SaveTarget>())
+  // File per whiteboard chosen by Save / Save As or imported from, so a later Save overwrites it without asking.
+  const saveTargets = useRef(new Map<string, { target: SaveTarget; format: Format }>())
   // Only the most recently requested diagram state may be shown, so late poll responses can't undo a change.
   const latestRequest = useRef(0)
   // Same for the whiteboard list, so a late poll can't drop a just created tab.
@@ -199,11 +199,12 @@ export function App() {
         return
       }
       // The picker must open before any other await, while the click still counts as user activation.
-      const target = (!askForLocation && saveTargets.current.get(id)) || (await pickSaveTarget(name, saveFormat))
+      const known = askForLocation ? undefined : saveTargets.current.get(id)
+      const target = known?.target ?? (await pickSaveTarget(name, saveFormat))
       if (!target) {
         return
       }
-      const format = formatOf(target.name, saveFormat)
+      const format = known?.format ?? formatOf(target.name, saveFormat)
       const writable = await openWritable(target)
       if (!writable) {
         saveTargets.current.delete(id)
@@ -212,8 +213,25 @@ export function App() {
         return
       }
       await writeText(writable, () => api.exportText(id, format))
-      saveTargets.current.set(id, target)
+      saveTargets.current.set(id, { target, format })
       setMessage(`Saved ${target.name} (${formats[format].label})`)
+    })
+  }
+
+  function onImport(chosen?: File) {
+    void run(async () => {
+      const picked = chosen ? { file: chosen, target: undefined } : await pickOpenFile()
+      if (!picked) {
+        return
+      }
+      const text = await picked.file.text()
+      const imported = await api.importText(text)
+      if (picked.target) {
+        // Save writes back to the imported file, in the format it was written in.
+        saveTargets.current.set(imported.id, { target: picked.target, format: formatOf(picked.file.name, detectFormat(text)) })
+      }
+      await show(imported)
+      setMessage(`Imported ${picked.file.name}`)
     })
   }
 
@@ -231,7 +249,7 @@ export function App() {
         onNew={onNew}
         onSave={() => onSave(false)}
         onSaveAs={() => onSave(true)}
-        onImport={(file) => void run(async () => show(await api.importText(await file.text())), `Imported ${file.name}`)}
+        onImport={onImport}
         onExport={onExport}
         onSaveFormatChange={onSaveFormatChange}
       />
