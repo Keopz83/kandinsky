@@ -40,7 +40,8 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 
 - **R-UI-1** A header menu bar at the top of the application with a **File** drop-down menu containing all file operations:
   - **New** — create an empty diagram.
-  - **Save** — persist the current diagram on the server.
+  - **Save** — save the current diagram to a file. The first Save of a diagram opens a dialog to choose the location (and format); further Saves overwrite that file without asking.
+  - **Save As** — always opens the dialog to save the current diagram to a new location.
   - **Export** — download the diagram as PlantUML or Mermaid.
   - **Import** — load a PlantUML or Mermaid file/text as a diagram.
 - **R-UI-2** A palette of shapes in the left menu containing:
@@ -61,11 +62,13 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - **R-UI-13** Multiple diagrams (whiteboards) are shown as tabs at the top of the canvas, one tab per diagram on the server. Clicking a tab opens that diagram, a **+** tab creates a new one and a tab's **×** deletes the diagram after a confirmation. The left menu has no diagram list.
 - **R-UI-14** Dragging one of several selected rectangles moves all selected rectangles together, keeping their relative positions; with Shift held all of them are copied (R-UI-7). Clicking a selected rectangle without dragging selects only that rectangle.
 - **R-UI-15** Mouse wheel navigation on the whiteboard: pressing the wheel and dragging pans the whiteboard; rotating the wheel forward zooms in, backward zooms out, centered on the mouse pointer.
+- **R-UI-16** A **Settings** drop-down menu in the header menu bar sets the default save format (PlantUML or Mermaid) used by Save / Save As. The default is **Mermaid**, the most widely used diagrams-as-code format (native rendering in GitHub, GitLab, Azure DevOps, Notion, Confluence). The setting is kept across sessions.
 
 ## Decisions (first implementation)
 
 - Backend: ASP.NET Core minimal API (.NET 10), OpenAPI at `/openapi/v1.json`. Frontend: React + Vite + TypeScript, SVG canvas.
-- Persistence: diagrams live in server memory; **Save** writes them as JSON files (`Storage:Path`, default `data/`), loaded on startup.
+- Persistence: diagrams live in server memory. The API endpoint `POST /api/diagrams/{id}/save` writes them as JSON files (`Storage:Path`, default `data/`), loaded on startup; the UI does not use it.
+- Save / Save As write PlantUML or Mermaid with layout comments (R-IO-6), so saved files are reopened with Import. The format follows the extension chosen in the dialog; the default save format is offered first. The dialog uses the browser's File System Access API (Chrome, Edge); other browsers download the file in the default format. The default save format is stored in the browser (`localStorage`).
 - Import/export: class diagram subset — classes (PlantUML also `interface`, `enum`, `abstract`, `rectangle`) and directed associations (`-->`, `..>`, reversed `<--`, `<..`) with optional labels. Class members and other relation types are rejected with a line-numbered error.
 - Imported diagrams keep the layout from their layout comments, otherwise they are auto-laid out (R-IO-7); shapes added without a position are placed in the first free grid slot.
 - Live updates: the UI polls the open diagram and the diagram list (tabs) every 2 seconds.

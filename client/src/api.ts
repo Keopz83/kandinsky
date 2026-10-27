@@ -26,7 +26,6 @@ export const api = {
   get: (id: string) => request<Diagram>('GET', at(id)),
   rename: (id: string, name: string) => request<Diagram>('PATCH', at(id), { name }),
   remove: (id: string) => request<void>('DELETE', at(id)),
-  save: (id: string) => request<void>('POST', at(id, 'save')),
   exportText: (id: string, format: Format) => request<string>('GET', `${at(id, 'export')}?format=${format}`),
   importText: (text: string) => request<Diagram>('POST', '/import', { text }),
   align: (id: string, shapeIds: string[], direction: AlignDirection) =>

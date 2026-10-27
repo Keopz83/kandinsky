@@ -1,17 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
+import { formats } from './saveFile'
 import type { Format } from './types'
+
+type Menu = 'file' | 'settings'
 
 interface Props {
   hasDiagram: boolean
+  saveFormat: Format
   onNew: () => void
   onSave: () => void
+  onSaveAs: () => void
   onImport: (file: File) => void
   onExport: (format: Format) => void
+  onSaveFormatChange: (format: Format) => void
 }
 
 export function MenuBar(props: Props) {
-  const [open, setOpen] = useState(false)
-  const menu = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState<Menu | null>(null)
+  const menus = useRef<HTMLDivElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const hasDiagram = props.hasDiagram
 
@@ -20,13 +26,13 @@ export function MenuBar(props: Props) {
       return
     }
     const onPointerDown = (e: PointerEvent) => {
-      if (!menu.current?.contains(e.target as Node)) {
-        setOpen(false)
+      if (!menus.current?.contains(e.target as Node)) {
+        setOpen(null)
       }
     }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setOpen(false)
+        setOpen(null)
       }
     }
     document.addEventListener('pointerdown', onPointerDown)
@@ -42,9 +48,22 @@ export function MenuBar(props: Props) {
       role="menuitem"
       disabled={disabled}
       onClick={() => {
-        setOpen(false)
+        setOpen(null)
         action()
       }}
+    >
+      {label}
+    </button>
+  )
+
+  const trigger = (menu: Menu, label: string) => (
+    <button
+      className={`menubar-trigger ${open === menu ? 'open' : ''}`}
+      aria-haspopup="menu"
+      aria-expanded={open === menu}
+      onClick={() => setOpen(open === menu ? null : menu)}
+      // Moving the pointer to another trigger while a menu is open switches menus, like desktop menu bars.
+      onPointerEnter={() => open && open !== menu && setOpen(menu)}
     >
       {label}
     </button>
@@ -53,21 +72,44 @@ export function MenuBar(props: Props) {
   return (
     <header className="menubar">
       <h1>Kandinsky</h1>
-      <div className="menubar-menu" ref={menu}>
-        <button className={`menubar-trigger ${open ? 'open' : ''}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
-          File
-        </button>
-        {open && (
-          <div className="dropdown" role="menu">
-            {item('New', props.onNew)}
-            {item('Save', props.onSave, !hasDiagram)}
-            <hr />
-            {item('Import…', () => fileInput.current?.click())}
-            <hr />
-            {item('Export as PlantUML', () => props.onExport('plantuml'), !hasDiagram)}
-            {item('Export as Mermaid', () => props.onExport('mermaid'), !hasDiagram)}
-          </div>
-        )}
+      <div className="menubar-menus" ref={menus}>
+        <div className="menubar-menu">
+          {trigger('file', 'File')}
+          {open === 'file' && (
+            <div className="dropdown" role="menu">
+              {item('New', props.onNew)}
+              {item('Save', props.onSave, !hasDiagram)}
+              {item('Save As…', props.onSaveAs, !hasDiagram)}
+              <hr />
+              {item('Import…', () => fileInput.current?.click())}
+              <hr />
+              {item('Export as PlantUML', () => props.onExport('plantuml'), !hasDiagram)}
+              {item('Export as Mermaid', () => props.onExport('mermaid'), !hasDiagram)}
+            </div>
+          )}
+        </div>
+        <div className="menubar-menu">
+          {trigger('settings', 'Settings')}
+          {open === 'settings' && (
+            <div className="dropdown" role="menu">
+              <div className="dropdown-heading">Default save format</div>
+              {(Object.keys(formats) as Format[]).map((format) => (
+                <button
+                  key={format}
+                  role="menuitemradio"
+                  aria-checked={props.saveFormat === format}
+                  onClick={() => {
+                    setOpen(null)
+                    props.onSaveFormatChange(format)
+                  }}
+                >
+                  <span className="check">{props.saveFormat === format ? '✓' : ''}</span>
+                  {formats[format].label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <input
           ref={fileInput}
           type="file"

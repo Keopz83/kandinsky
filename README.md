@@ -2,7 +2,7 @@
 
 Web app for creating code UML diagrams.
 
-- **Frontend** (`client/`): thin React client with a header menu bar with a File drop-down (New, Save, Import, Export), whiteboard tabs at the top of the canvas and a left shape palette (rectangle, directed edge).
+- **Frontend** (`client/`): thin React client with a header menu bar with a File drop-down (New, Save, Save As, Import, Export) and a Settings drop-down (default save format), whiteboard tabs at the top of the canvas and a left shape palette (rectangle, directed edge).
 - **Backend** (`server/`): ASP.NET Core minimal API that owns and processes the diagrams. The UI and external clients (e.g. an MCP server) use the same REST API.
 - **Formats:** import and export as PlantUML or Mermaid class diagrams. Shape positions are kept in `kandinsky:layout` comments; files without them are auto-laid out on import.
 
@@ -32,7 +32,8 @@ Open http://localhost:5180.
 - **Rectangle**: click to add one in a free spot, or drag it onto the canvas.
 - **Directed edge**: click it, then the source rectangle, then the target. The tool stays active for further edges until Esc is pressed or the tool is clicked again.
 - Drag rectangles or edges to move them (dragging one of several selected objects moves them all; a selected edge carries its two rectangles along), Shift+drag to copy them (copied edges connect the copied rectangles), drag the corner handle to resize, double-click a rectangle or edge to edit its label, press Delete to remove the selection.
-- **Save** writes the diagram to `server/Kandinsky.Server/data/`. Unsaved diagrams are lost on server restart.
+- **Save** opens a save dialog to choose the file location and format (PlantUML or Mermaid, with layout comments, so the file can be reopened with **Import**); later Saves of the same whiteboard overwrite that file without asking. **Save As…** always asks for a new location. **Settings → Default save format** selects the format offered first (default: Mermaid; stored in the browser). The dialog needs the File System Access API (Chrome, Edge); other browsers download the file in the default format instead.
+- Diagrams on the server live in memory; the UI no longer writes them to `server/Kandinsky.Server/data/` (the `/save` endpoint remains for API clients). Diagrams not saved to a file are lost on server restart.
 - Select several rectangles and edges with Ctrl/Cmd+click or by dragging a box on the empty canvas — any rectangle or edge the box touches is selected (Ctrl/Cmd adds to the selection).
 - **Align horizontally / vertically** lines up the selected rectangles on the first selected one (drawn with a thicker border); selected edges are ignored.
 - **Auto-layout** arranges all rectangles in layers following the edge direction; unconnected ones go in a grid below.
@@ -46,7 +47,7 @@ OpenAPI document: http://localhost:5080/openapi/v1.json. Example requests: [Kand
 |---|---|---|
 | GET / POST | `/api/diagrams` | List / create diagrams |
 | GET / PATCH / DELETE | `/api/diagrams/{id}` | Get / rename / delete a diagram |
-| POST | `/api/diagrams/{id}/save` | Persist a diagram |
+| POST | `/api/diagrams/{id}/save` | Persist a diagram on the server (`data/`) |
 | GET | `/api/diagrams/{id}/export?format=plantuml\|mermaid` | Export as text |
 | POST | `/api/diagrams/import` | Create a diagram from text (`{ text, format?, name? }`) |
 | POST | `/api/diagrams/{id}/align` | Align shapes (`{ shapeIds, direction: "horizontal" \| "vertical" }`) |

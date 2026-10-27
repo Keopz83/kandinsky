@@ -3,19 +3,19 @@ import { api } from './api'
 import { Canvas } from './Canvas'
 import { LabelInput } from './LabelInput'
 import { MenuBar } from './MenuBar'
+import { canPickSaveLocation, download, fileName, formatOf, formats, pickSaveTarget, writeText, type SaveTarget } from './saveFile'
 import { Sidebar } from './Sidebar'
 import { Tabs } from './Tabs'
 import type { AlignDirection, Diagram, DiagramSummary, Format, Tool } from './types'
 
 const POLL_INTERVAL_MS = 2000
+const SAVE_FORMAT_KEY = 'kandinsky.saveFormat'
+// Mermaid is the most widely used diagrams-as-code format (rendered natively by GitHub, GitLab, Azure DevOps, Notion, …).
+const DEFAULT_SAVE_FORMAT: Format = 'mermaid'
 
-function download(fileName: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  link.click()
-  setTimeout(() => URL.revokeObjectURL(url))
+function storedSaveFormat(): Format {
+  const stored = localStorage.getItem(SAVE_FORMAT_KEY)
+  return stored === 'plantuml' || stored === 'mermaid' ? stored : DEFAULT_SAVE_FORMAT
 }
 
 // The server sorts by name; tabs keep their position and new whiteboards are appended.
@@ -37,6 +37,9 @@ export function App() {
   const [selection, setSelection] = useState<string[]>([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [saveFormat, setSaveFormat] = useState<Format>(storedSaveFormat)
+  // File chosen per whiteboard by Save / Save As, so a later Save overwrites it without asking again.
+  const saveTargets = useRef(new Map<string, SaveTarget>())
   // Only the most recently requested diagram state may be shown, so late poll responses can't undo a change.
   const latestRequest = useRef(0)
   // Same for the whiteboard list, so a late poll can't drop a just created tab.
@@ -175,20 +178,53 @@ export function App() {
     if (!diagram) {
       return
     }
-    const extension = format === 'plantuml' ? 'puml' : 'mmd'
     void run(async () => {
-      download(`${diagram.name.replace(/[^\w.-]+/g, '_')}.${extension}`, await api.exportText(diagram.id, format))
-    }, `Exported as ${format === 'plantuml' ? 'PlantUML' : 'Mermaid'}`)
+      download(fileName(diagram.name, format), await api.exportText(diagram.id, format))
+    }, `Exported as ${formats[format].label}`)
+  }
+
+  function onSave(askForLocation: boolean) {
+    if (!diagram) {
+      return
+    }
+    const { id, name } = diagram
+    void run(async () => {
+      if (!canPickSaveLocation()) {
+        // Without the File System Access API the browser decides the location (or asks, depending on its settings).
+        const file = fileName(name, saveFormat)
+        download(file, await api.exportText(id, saveFormat))
+        setMessage(`Downloaded ${file}`)
+        return
+      }
+      // The picker must open before any other await, while the click still counts as user activation.
+      const target = (!askForLocation && saveTargets.current.get(id)) || (await pickSaveTarget(name, saveFormat))
+      if (!target) {
+        return
+      }
+      const format = formatOf(target.name, saveFormat)
+      await writeText(target, await api.exportText(id, format))
+      saveTargets.current.set(id, target)
+      setMessage(`Saved ${target.name} (${formats[format].label})`)
+    })
+  }
+
+  function onSaveFormatChange(format: Format) {
+    localStorage.setItem(SAVE_FORMAT_KEY, format)
+    setSaveFormat(format)
+    setMessage(`Default save format: ${formats[format].label}`)
   }
 
   return (
     <div className="app">
       <MenuBar
         hasDiagram={diagram !== null}
+        saveFormat={saveFormat}
         onNew={onNew}
-        onSave={() => diagramId && void run(() => api.save(diagramId), 'Saved')}
+        onSave={() => onSave(false)}
+        onSaveAs={() => onSave(true)}
         onImport={(file) => void run(async () => show(await api.importText(await file.text())), `Imported ${file.name}`)}
         onExport={onExport}
+        onSaveFormatChange={onSaveFormatChange}
       />
       <div className="workspace">
         <Sidebar

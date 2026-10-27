@@ -49,6 +49,11 @@ body,
   font-size: inherit;
 }
 
+.menubar-menus {
+  display: flex;
+  gap: 2px;
+}
+
 .menubar-menu {
   position: relative;
 }
@@ -88,6 +93,17 @@ body,
 
 .dropdown button:hover:not(:disabled) {
   background: #e8f0ff;
+}
+
+.dropdown-heading {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.dropdown .check {
+  display: inline-block;
+  width: 1.2em;
 }
 
 .dropdown hr {
