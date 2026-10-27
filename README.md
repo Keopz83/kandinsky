@@ -27,6 +27,7 @@ Open http://localhost:5180.
 
 ## Use
 
+- The app opens with a new blank "Untitled" diagram (a reload keeps the open one, its id is in the URL hash).
 - **New** creates an "Untitled" diagram; click the name in the toolbar to rename it.
 - **Rectangle**: click to add one in a free spot, or drag it onto the canvas.
 - **Directed edge**: click it, then the source rectangle, then the target. Esc cancels.

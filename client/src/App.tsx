@@ -25,6 +25,8 @@ export function App() {
   const [error, setError] = useState('')
   // Only the most recently requested diagram state may be shown, so late poll responses can't undo a change.
   const latestRequest = useRef(0)
+  // StrictMode runs effects twice in development; the startup diagram must be created only once.
+  const started = useRef(false)
   const diagramId = diagram?.id
   // Shapes may disappear through other clients; ignore those ids.
   const selected = selection.filter((id) => diagram?.shapes.some((s) => s.id === id))
@@ -73,14 +75,17 @@ export function App() {
   const selectTool = useCallback(() => setTool('select'), [])
 
   useEffect(() => {
+    if (started.current) {
+      return
+    }
+    started.current = true
     void run(async () => {
-      setDiagrams(await api.list())
+      // A diagram linked in the URL (e.g. after a reload) is reopened; otherwise the app starts with a blank one.
       const id = decodeURIComponent(window.location.hash.slice(1))
-      if (id) {
-        await load(id)
-      }
+      const linked = id ? await api.get(id).catch(() => null) : null
+      await show(linked ?? (await api.create('Untitled')))
     })
-  }, [run, load])
+  }, [run, show])
 
   useEffect(() => {
     if (!diagramId) {

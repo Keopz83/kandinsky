@@ -55,6 +55,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
   - **vertically** — in a column, all horizontal centers on the first selected rectangle's center.
 - **R-UI-10** An auto-layout button arranges all rectangles of the diagram: connected rectangles in layers following the edge direction (top to bottom, with as few crossings as practical), unconnected rectangles in a grid below.
 - **R-UI-11** Align and auto-layout run on the server and are available in the REST API.
+- **R-UI-12** The application opens with a new blank diagram.
 
 ## Decisions (first implementation)
 
@@ -64,6 +65,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - Imported diagrams are laid out in a grid; shapes added without a position are placed in the first free grid slot.
 - Live updates: the UI polls the open diagram every 2 seconds.
 - Self-referencing edges are rejected.
+- On start the UI creates a blank "Untitled" diagram on the server. The open diagram's id is kept in the URL hash, so a reload or link reopens that diagram instead (a new one is created if it no longer exists).
 
 ## Open points
 
