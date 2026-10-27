@@ -56,6 +56,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - **R-UI-10** An auto-layout button arranges all rectangles of the diagram: connected rectangles in layers following the edge direction (top to bottom, with as few crossings as practical), unconnected rectangles in a grid below.
 - **R-UI-11** Align and auto-layout run on the server and are available in the REST API.
 - **R-UI-12** The application opens with a new blank diagram.
+- **R-UI-13** Multiple diagrams (whiteboards) are shown as tabs at the top of the canvas, one tab per diagram on the server. Clicking a tab opens that diagram, a **+** tab creates a new one and a tab's **×** deletes the diagram after a confirmation. The left menu has no diagram list.
 
 ## Decisions (first implementation)
 
@@ -63,7 +64,8 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - Persistence: diagrams live in server memory; **Save** writes them as JSON files (`Storage:Path`, default `data/`), loaded on startup.
 - Import/export: class diagram subset — classes (PlantUML also `interface`, `enum`, `abstract`, `rectangle`) and directed associations (`-->`, `..>`, reversed `<--`, `<..`) with optional labels. Class members and other relation types are rejected with a line-numbered error.
 - Imported diagrams are laid out in a grid; shapes added without a position are placed in the first free grid slot.
-- Live updates: the UI polls the open diagram every 2 seconds.
+- Live updates: the UI polls the open diagram and the diagram list (tabs) every 2 seconds.
+- Tabs keep their order; diagrams created elsewhere are appended at the end. If the open diagram is deleted, the neighboring tab opens.
 - Self-referencing edges are rejected.
 - On start the UI creates a blank "Untitled" diagram on the server. The open diagram's id is kept in the URL hash, so a reload or link reopens that diagram instead (a new one is created if it no longer exists).
 

@@ -125,6 +125,73 @@ select:disabled {
   min-width: 0;
 }
 
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--border);
+  background: #f6f7f9;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  max-width: 200px;
+  margin-bottom: -1px;
+  border: 1px solid var(--border);
+  border-radius: 6px 6px 0 0;
+  background: #eceef2;
+}
+
+.tab.active {
+  background: white;
+  border-bottom-color: white;
+}
+
+.tabs button {
+  border: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+}
+
+.tab-name {
+  padding: 6px 4px 6px 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+.tab.active .tab-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tab-close {
+  padding: 2px 8px;
+  color: var(--muted);
+  line-height: 1;
+}
+
+.tabs .tab-close:hover {
+  color: #b42318;
+}
+
+.tab-new {
+  padding: 4px 10px;
+  margin-bottom: 2px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.tabs .tab-new:hover {
+  color: var(--accent);
+}
+
 .toolbar {
   display: flex;
   align-items: center;

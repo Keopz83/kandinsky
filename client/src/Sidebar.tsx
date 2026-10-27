@@ -1,13 +1,11 @@
 import { useRef } from 'react'
 import { SHAPE_MIME } from './Canvas'
-import type { AlignDirection, DiagramSummary, Format, Tool } from './types'
+import type { AlignDirection, Format, Tool } from './types'
 
 interface Props {
-  diagrams: DiagramSummary[]
-  currentId: string | undefined
+  hasDiagram: boolean
   tool: Tool
   onNew: () => void
-  onOpen: (id: string) => void
   onSave: () => void
   onImport: (file: File) => void
   onExport: (format: Format) => void
@@ -20,7 +18,7 @@ interface Props {
 
 export function Sidebar(props: Props) {
   const fileInput = useRef<HTMLInputElement>(null)
-  const hasDiagram = props.currentId !== undefined
+  const hasDiagram = props.hasDiagram
 
   return (
     <aside className="sidebar">
@@ -29,21 +27,6 @@ export function Sidebar(props: Props) {
       <nav className="menu">
         <h2>Diagram</h2>
         <button onClick={props.onNew}>New</button>
-        <select
-          aria-label="Open diagram"
-          value={props.currentId ?? ''}
-          disabled={props.diagrams.length === 0}
-          onChange={(e) => props.onOpen(e.target.value)}
-        >
-          <option value="" disabled>
-            Open…
-          </option>
-          {props.diagrams.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
         <button onClick={props.onSave} disabled={!hasDiagram}>
           Save
         </button>

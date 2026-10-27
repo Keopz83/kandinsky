@@ -2,7 +2,7 @@
 
 Web app for creating code UML diagrams.
 
-- **Frontend** (`client/`): thin React client with a left menu (New, Open, Save, Import, Export) and a shape palette (rectangle, directed edge).
+- **Frontend** (`client/`): thin React client with whiteboard tabs at the top, a left menu (New, Save, Import, Export) and a shape palette (rectangle, directed edge).
 - **Backend** (`server/`): ASP.NET Core minimal API that owns and processes the diagrams. The UI and external clients (e.g. an MCP server) use the same REST API.
 - **Formats:** import and export as PlantUML or Mermaid class diagrams.
 
@@ -28,7 +28,7 @@ Open http://localhost:5180.
 ## Use
 
 - The app opens with a new blank "Untitled" diagram (a reload keeps the open one, its id is in the URL hash).
-- **New** creates an "Untitled" diagram; click the name in the toolbar to rename it.
+- Every diagram on the server is a tab at the top; click a tab to switch, **+** (or **New**) creates an "Untitled" diagram, **×** deletes a diagram after confirmation. Click the name in the toolbar to rename it.
 - **Rectangle**: click to add one in a free spot, or drag it onto the canvas.
 - **Directed edge**: click it, then the source rectangle, then the target. Esc cancels.
 - Drag rectangles to move them, Shift+drag to copy them, drag the corner handle to resize, double-click a rectangle or edge to edit its label, press Delete to remove the selection.
