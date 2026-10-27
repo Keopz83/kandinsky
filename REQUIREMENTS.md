@@ -33,6 +33,8 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - **R-IO-3** Import a diagram from PlantUML.
 - **R-IO-4** Import a diagram from Mermaid.
 - **R-IO-5** Import reports unsupported or invalid syntax as an error instead of failing silently.
+- **R-IO-6** Export keeps the layout: PlantUML and Mermaid cannot express positions, so the position and size of every shape are written as format comments (`' kandinsky:layout <id> x=<x> y=<y> width=<width> height=<height>` in PlantUML, `%% kandinsky:layout …` in Mermaid). Other tools ignore these comments and render the diagram as usual.
+- **R-IO-7** Import restores the layout from these comments. Files without layout comments are arranged with the auto-layout (R-UI-10); in files with layout for only some shapes, the shapes without layout are placed in free grid slots. Malformed layout comments and layout for unknown shapes are reported as errors (R-IO-5).
 
 ## User interface
 
@@ -65,7 +67,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - Backend: ASP.NET Core minimal API (.NET 10), OpenAPI at `/openapi/v1.json`. Frontend: React + Vite + TypeScript, SVG canvas.
 - Persistence: diagrams live in server memory; **Save** writes them as JSON files (`Storage:Path`, default `data/`), loaded on startup.
 - Import/export: class diagram subset — classes (PlantUML also `interface`, `enum`, `abstract`, `rectangle`) and directed associations (`-->`, `..>`, reversed `<--`, `<..`) with optional labels. Class members and other relation types are rejected with a line-numbered error.
-- Imported diagrams are laid out in a grid; shapes added without a position are placed in the first free grid slot.
+- Imported diagrams keep the layout from their layout comments, otherwise they are auto-laid out (R-IO-7); shapes added without a position are placed in the first free grid slot.
 - Live updates: the UI polls the open diagram and the diagram list (tabs) every 2 seconds.
 - Tabs keep their order; diagrams created elsewhere are appended at the end. If the open diagram is deleted, the neighboring tab opens.
 - Self-referencing edges are rejected.
@@ -74,7 +76,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 ## Open points
 
 - Which UML element types beyond rectangles and directed edges (classes with attributes/methods, interfaces, association types such as inheritance/composition).
-- Better layout of imported diagrams; keeping positions across export/import.
+- Exporting layout hints (e.g. PlantUML `-right->`, Mermaid `direction`) so external renderers approximate the Kandinsky layout.
 - Push-based live updates (SSE/WebSocket) instead of polling.
 - Authentication / multi-user support.
 - An MCP server on top of the REST API.

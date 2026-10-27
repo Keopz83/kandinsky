@@ -26,6 +26,10 @@ public static partial class PlantUml
             }
             text.Append('\n');
         }
+        foreach (var shape in diagram.Shapes)
+        {
+            text.Append("' ").Append(LayoutComment.Format(shape)).Append('\n');
+        }
         text.Append("@enduml\n");
         return text.ToString();
     }
@@ -40,8 +44,16 @@ public static partial class PlantUml
         {
             var line = lines[i].Trim();
             var number = i + 1;
-            if (line.Length == 0 || line.StartsWith('\''))
+            if (line.Length == 0)
             {
+                continue;
+            }
+            if (line.StartsWith('\''))
+            {
+                if (started)
+                {
+                    LayoutComment.Read(line[1..].Trim(), number, builder);
+                }
                 continue;
             }
             if (line.StartsWith("@startuml", StringComparison.Ordinal))

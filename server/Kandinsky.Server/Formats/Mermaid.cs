@@ -28,6 +28,10 @@ public static partial class Mermaid
             }
             text.Append('\n');
         }
+        foreach (var shape in diagram.Shapes)
+        {
+            text.Append("  %% ").Append(LayoutComment.Format(shape)).Append('\n');
+        }
         return text.ToString();
     }
 
@@ -42,8 +46,13 @@ public static partial class Mermaid
         {
             var line = lines[i].Trim();
             var number = i + 1;
-            if (line.Length == 0 || line.StartsWith("%%", StringComparison.Ordinal))
+            if (line.Length == 0)
             {
+                continue;
+            }
+            if (line.StartsWith("%%", StringComparison.Ordinal))
+            {
+                LayoutComment.Read(line[2..].Trim(), number, builder);
                 continue;
             }
             if (!started)

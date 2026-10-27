@@ -250,15 +250,39 @@ public sealed class DiagramService
         var format = request.Format is null ? DiagramFormats.Detect(request.Text) : DiagramFormats.Parse(request.Format);
         var parsed = DiagramFormats.Parse(request.Text.Replace("\r\n", "\n"), format);
 
-        var shapes = parsed.Shapes
-            .Select((s, i) => new Shape(s.Id, ValidLabel(s.Label), GridOrigin + i % GridColumns * GridX, GridOrigin + i / GridColumns * GridY, DefaultWidth, DefaultHeight))
-            .ToList();
-        var diagram = new Diagram(NewDiagramId(), ValidName(request.Name ?? parsed.Title ?? "Imported diagram"), shapes, []);
-        var used = shapes.Select(s => s.Id).ToHashSet();
+        var used = parsed.Shapes.Select(s => s.Id).ToHashSet();
         var edges = parsed.Edges
             .Select(e => new Edge(NextId(used, "e"), e.SourceId, e.TargetId, ValidEdgeLabel(e.Label)))
             .ToList();
-        diagram = diagram with { Edges = edges };
+        var diagram = new Diagram(NewDiagramId(), ValidName(request.Name ?? parsed.Title ?? "Imported diagram"), [], edges);
+
+        if (parsed.Shapes.All(s => s.Bounds is null))
+        {
+            var shapes = parsed.Shapes.Select(s => new Shape(s.Id, ValidLabel(s.Label), 0, 0, DefaultWidth, DefaultHeight)).ToList();
+            diagram = diagram with { Shapes = DiagramLayout.Arrange(shapes, edges) };
+        }
+        else
+        {
+            // Shapes with a layout comment keep their position; shapes added without one go to free grid slots.
+            var placed = parsed.Shapes
+                .Where(s => s.Bounds is not null)
+                .Select(s => new Shape(
+                    s.Id,
+                    ValidLabel(s.Label),
+                    ValidCoordinate(s.Bounds!.X, "X"),
+                    ValidCoordinate(s.Bounds.Y, "Y"),
+                    ValidSize(s.Bounds.Width, "Width"),
+                    ValidSize(s.Bounds.Height, "Height")))
+                .ToDictionary(s => s.Id);
+            diagram = diagram with { Shapes = [.. placed.Values] };
+            foreach (var s in parsed.Shapes.Where(s => s.Bounds is null))
+            {
+                var (x, y) = FreePosition(diagram, DefaultWidth, DefaultHeight);
+                placed[s.Id] = new Shape(s.Id, ValidLabel(s.Label), x, y, DefaultWidth, DefaultHeight);
+                diagram = diagram with { Shapes = [.. placed.Values] };
+            }
+            diagram = diagram with { Shapes = parsed.Shapes.Select(s => placed[s.Id]).ToList() };
+        }
 
         lock (_lock)
         {

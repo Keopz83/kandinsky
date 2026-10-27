@@ -18,7 +18,8 @@ public class FormatTests
         var text = PlantUml.Export(Shop);
 
         Assert.Equal(
-            "@startuml\ntitle Shop\nclass \"Customer\" as s1\nclass \"Order\" as s2\ns1 --> s2 : places\n@enduml\n",
+            "@startuml\ntitle Shop\nclass \"Customer\" as s1\nclass \"Order\" as s2\ns1 --> s2 : places\n"
+                + "' kandinsky:layout s1 x=0 y=0 width=140 height=60\n' kandinsky:layout s2 x=200 y=0 width=140 height=60\n@enduml\n",
             text);
     }
 
@@ -28,7 +29,8 @@ public class FormatTests
         var text = Mermaid.Export(Shop);
 
         Assert.Equal(
-            "---\ntitle: \"Shop\"\n---\nclassDiagram\n  class s1[\"Customer\"]\n  class s2[\"Order\"]\n  s1 --> s2 : places\n",
+            "---\ntitle: \"Shop\"\n---\nclassDiagram\n  class s1[\"Customer\"]\n  class s2[\"Order\"]\n  s1 --> s2 : places\n"
+                + "  %% kandinsky:layout s1 x=0 y=0 width=140 height=60\n  %% kandinsky:layout s2 x=200 y=0 width=140 height=60\n",
             text);
     }
 
@@ -119,7 +121,38 @@ public class FormatTests
         var parsed = DiagramFormats.Parse(DiagramFormats.Export(Shop, format), format);
 
         Assert.Equal("Shop", parsed.Title);
-        Assert.Equal([new("s1", "Customer"), new("s2", "Order")], parsed.Shapes);
+        Assert.Equal([new("s1", "Customer", new(0, 0, 140, 60)), new("s2", "Order", new(200, 0, 140, 60))], parsed.Shapes);
         Assert.Equal([new("s1", "s2", "places")], parsed.Edges);
+    }
+
+    [Fact]
+    public void Parses_layout_comments_in_any_position()
+    {
+        var plantUml = PlantUml.Parse("""
+            @startuml
+            ' kandinsky:layout B x=10.5 y=20 width=100 height=50
+            A --> B
+            ' a normal comment
+            ' kandinsky:layout A x=300 y=0 width=140 height=60
+            @enduml
+            """);
+        var mermaid = Mermaid.Parse("""
+            classDiagram
+              A --> B
+              %% kandinsky:layout A x=300 y=0 width=140 height=60
+            """);
+
+        Assert.Equal([new("A", "A", new(300, 0, 140, 60)), new("B", "B", new(10.5, 20, 100, 50))], plantUml.Shapes);
+        Assert.Equal([new("A", "A", new(300, 0, 140, 60)), new("B", "B")], mermaid.Shapes);
+    }
+
+    [Theory]
+    [InlineData("@startuml\nclass A\n' kandinsky:layout A x=1\n@enduml", "Line 3: invalid layout comment, expected 'kandinsky:layout <id> x=<x> y=<y> width=<width> height=<height>'.")]
+    [InlineData("@startuml\nclass A\n' kandinsky:layout B x=1 y=2 width=3 height=4\n@enduml", "Line 3: layout for unknown shape 'B'.")]
+    [InlineData("classDiagram\n%% kandinsky:layout A x=a y=2 width=3 height=4", "Line 2: invalid layout comment, expected 'kandinsky:layout <id> x=<x> y=<y> width=<width> height=<height>'.")]
+    public void Reports_invalid_layout_comments(string text, string message)
+    {
+        var error = Assert.Throws<DiagramValidationException>(() => DiagramFormats.Parse(text, DiagramFormats.Detect(text)));
+        Assert.Equal(message, error.Message);
     }
 }

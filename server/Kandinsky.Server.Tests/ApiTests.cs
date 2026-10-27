@@ -201,9 +201,51 @@ public sealed class ApiTests : IDisposable
         var mermaid = await client.GetStringAsync($"/api/diagrams/{imported.Id}/export?format=mermaid");
 
         Assert.Equal("Zoo", imported.Name);
-        Assert.Equal(
-            "---\ntitle: \"Zoo\"\n---\nclassDiagram\n  class Cat[\"Cat\"]\n  class Animal[\"Animal\"]\n  Cat --> Animal : is a\n",
+        Assert.StartsWith(
+            "---\ntitle: \"Zoo\"\n---\nclassDiagram\n  class Cat[\"Cat\"]\n  class Animal[\"Animal\"]\n  Cat --> Animal : is a\n  %% kandinsky:layout Cat ",
             mermaid);
+    }
+
+    [Fact]
+    public async Task Import_without_layout_applies_auto_layout()
+    {
+        var client = CreateClient();
+
+        var imported = await Read<Diagram>(
+            await client.PostAsJsonAsync("/api/diagrams/import", new { text = "classDiagram\n  C --> B\n  B --> A\n  class Lonely" }),
+            HttpStatusCode.Created);
+
+        var y = imported.Shapes.ToDictionary(s => s.Id, s => s.Y);
+        Assert.True(y["C"] < y["B"] && y["B"] < y["A"] && y["A"] < y["Lonely"]);
+    }
+
+    [Theory]
+    [InlineData("plantuml")]
+    [InlineData("mermaid")]
+    public async Task Export_and_import_keep_the_layout(string format)
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { name = "Layout" }), HttpStatusCode.Created);
+        var a = await Read<Shape>(await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/shapes", new { label = "A", x = 500, y = 30, width = 180, height = 90 }), HttpStatusCode.Created);
+        var b = await Read<Shape>(await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/shapes", new { label = "B", x = 20.5, y = 400 }), HttpStatusCode.Created);
+        await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/edges", new { sourceId = a.Id, targetId = b.Id });
+
+        var text = await client.GetStringAsync($"/api/diagrams/{diagram.Id}/export?format={format}");
+        var imported = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams/import", new { text }), HttpStatusCode.Created);
+
+        Assert.Equal([a, b], imported.Shapes);
+    }
+
+    [Fact]
+    public async Task Import_places_shapes_without_layout_in_free_slots()
+    {
+        var client = CreateClient();
+        var text = "@startuml\nA --> B\n' kandinsky:layout A x=40 y=40 width=140 height=60\n@enduml";
+
+        var imported = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams/import", new { text }), HttpStatusCode.Created);
+
+        Assert.Equal(new Shape("A", "A", 40, 40, 140, 60), imported.Shapes[0]);
+        Assert.Equal((240.0, 40.0), (imported.Shapes[1].X, imported.Shapes[1].Y));
     }
 
     [Fact]
