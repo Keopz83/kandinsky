@@ -95,6 +95,13 @@ body,
   background: #e8f0ff;
 }
 
+.dropdown .shortcut {
+  float: right;
+  margin-left: 24px;
+  font-family: inherit;
+  color: #6b7280;
+}
+
 .dropdown-heading {
   padding: 4px 12px;
   font-size: 12px;
@@ -299,6 +306,7 @@ select:disabled {
   flex: 1;
   position: relative;
   overflow: hidden;
+  touch-action: none;
   background-color: white;
 }
 

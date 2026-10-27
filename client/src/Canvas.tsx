@@ -54,8 +54,32 @@ interface View {
 
 const DEFAULT_VIEW: View = { x: 0, y: 0, zoom: 1 }
 
+const TRACKPAD_GESTURE_GAP_MS = 150
+
+/**
+ * Tells a trackpad two-finger scroll from a mouse wheel notch. Mouse wheels scroll by lines (Firefox) or
+ * by notches whose legacy `wheelDeltaY` is not exactly -3 × `deltaY` (Chromium, Safari); trackpads send
+ * smooth pixel deltas, often horizontal too. Events continuing a recent trackpad gesture stay one.
+ */
+function isTrackpadScroll(e: WheelEvent, continuesGesture: boolean) {
+  if (e.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) {
+    return false
+  }
+  if (continuesGesture || e.deltaX !== 0) {
+    return true
+  }
+  const legacy = (e as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY
+  return legacy !== undefined && legacy !== 0 && legacy === -3 * e.deltaY
+}
+
 interface Pan {
   pointerId: number
+  client: Point
+  view: View
+}
+
+/** Two fingers on a touch screen dragging the whiteboard: their midpoint at the start and the view then. */
+interface TouchPan {
   client: Point
   view: View
 }
@@ -71,6 +95,11 @@ interface Props {
 }
 
 const center = (s: Shape): Point => ({ x: s.x + s.width / 2, y: s.y + s.height / 2 })
+
+const midpoint = (points: Point[]): Point => ({
+  x: points.reduce((sum, p) => sum + p.x, 0) / points.length,
+  y: points.reduce((sum, p) => sum + p.y, 0) / points.length,
+})
 
 const boxOf = (a: Point, b: Point) => ({
   x: Math.min(a.x, b.x),
@@ -131,6 +160,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   const svgRef = useRef<SVGSVGElement>(null)
   const [views, setViews] = useState<Record<string, View>>({})
   const [pan, setPan] = useState<Pan | null>(null)
+  const touches = useRef(new Map<number, Point>())
+  const [touchPan, setTouchPan] = useState<TouchPan | null>(null)
   const view = views[diagram.id] ?? DEFAULT_VIEW
   const [editing, setEditing] = useState<Selection>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -175,20 +206,35 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   }, [diagram, selected, onSelect, mutate, onToolDone])
 
   // Mouse wheel forward zooms in, backward zooms out, keeping the point under the cursor in place.
+  // A two-finger move on a trackpad drags the whiteboard; a trackpad pinch (sent with ctrlKey) zooms.
   useEffect(() => {
     const svg = svgRef.current!
     const diagramId = diagram.id
+    let lastTrackpadScroll = 0
     function onWheel(e: WheelEvent) {
-      if (e.deltaY === 0) {
+      if (e.deltaX === 0 && e.deltaY === 0) {
         return
       }
       e.preventDefault()
+      if (!e.ctrlKey && isTrackpadScroll(e, e.timeStamp - lastTrackpadScroll < TRACKPAD_GESTURE_GAP_MS)) {
+        lastTrackpadScroll = e.timeStamp
+        setViews((views) => {
+          const v = views[diagramId] ?? DEFAULT_VIEW
+          return { ...views, [diagramId]: { ...v, x: v.x + e.deltaX, y: v.y + e.deltaY } }
+        })
+        return
+      }
+      if (e.deltaY === 0) {
+        return
+      }
       const delta = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY * 16 : e.deltaY
+      // Pinch deltas are small; scale them up so pinching feels as fast as the wheel.
+      const speed = e.ctrlKey ? 0.01 : 0.002
       const rect = svg.getBoundingClientRect()
       const cursor = { x: e.clientX - rect.left, y: e.clientY - rect.top }
       setViews((views) => {
         const v = views[diagramId] ?? DEFAULT_VIEW
-        const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.zoom * Math.exp(-delta * 0.002)))
+        const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.zoom * Math.exp(-delta * speed)))
         const scale = zoom / v.zoom
         return { ...views, [diagramId]: { zoom, x: cursor.x - (cursor.x - v.x) * scale, y: cursor.y - (cursor.y - v.y) * scale } }
       })
@@ -198,7 +244,21 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   }, [diagram.id])
 
   // Pressing the mouse wheel and dragging pans the whiteboard, also when starting on a shape.
+  // On a touch screen, moving two fingers pans it; the second finger cancels what the first one started.
   function onPanStart(e: PointerEvent<HTMLDivElement>) {
+    if (e.pointerType === 'touch') {
+      touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (touches.current.size === 2) {
+        setDrag(null)
+        setMarquee(null)
+        setTouchPan({ client: midpoint([...touches.current.values()]), view })
+      }
+      if (touches.current.size >= 2) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+      return
+    }
     if (e.button !== 1) {
       return
     }
@@ -209,6 +269,16 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   }
 
   function onPanMove(e: PointerEvent<HTMLDivElement>) {
+    if (e.pointerType === 'touch' && touches.current.has(e.pointerId)) {
+      touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (touchPan) {
+        e.stopPropagation()
+        const m = midpoint([...touches.current.values()].slice(0, 2))
+        const next = { ...touchPan.view, x: touchPan.view.x + m.x - touchPan.client.x, y: touchPan.view.y + m.y - touchPan.client.y }
+        setViews((views) => ({ ...views, [diagram.id]: next }))
+      }
+      return
+    }
     if (!pan || e.pointerId !== pan.pointerId) {
       return
     }
@@ -218,6 +288,15 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   }
 
   function onPanEnd(e: PointerEvent<HTMLDivElement>) {
+    if (touches.current.delete(e.pointerId)) {
+      if (touchPan) {
+        e.stopPropagation()
+        if (touches.current.size < 2) {
+          setTouchPan(null)
+        }
+      }
+      return
+    }
     if (pan && e.pointerId === pan.pointerId) {
       e.stopPropagation()
       setPan(null)
@@ -412,7 +491,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
 
   return (
     <div
-      className={`canvas ${tool === 'edge' ? 'connecting' : ''} ${pan ? 'panning' : ''}`}
+      className={`canvas ${tool === 'edge' ? 'connecting' : ''} ${pan || touchPan ? 'panning' : ''}`}
       onPointerDownCapture={onPanStart}
       onPointerMoveCapture={onPanMove}
       onPointerUpCapture={onPanEnd}

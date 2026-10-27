@@ -64,6 +64,8 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - **R-UI-15** Mouse wheel navigation on the whiteboard: pressing the wheel and dragging pans the whiteboard; rotating the wheel forward zooms in, backward zooms out, centered on the mouse pointer.
 - **R-UI-16** A **Settings** drop-down menu in the header menu bar sets the default save format (PlantUML or Mermaid) used by Save / Save As. The default is **Mermaid**, the most widely used diagrams-as-code format (native rendering in GitHub, GitLab, Azure DevOps, Notion, Confluence). The setting is kept across sessions.
 - **R-UI-17** The user renames a diagram directly on its tab: double-clicking the tab turns the name into a text field; Enter or leaving the field saves the name, Esc cancels. The name is shown only on the tab, not repeated as a title below the tabs.
+- **R-UI-18** Keyboard shortcuts: Ctrl+S (Cmd+S on macOS) runs **Save**, Ctrl+Shift+S (Cmd+Shift+S) runs **Save As**. The browser's own save-page action is suppressed. The File menu shows the shortcuts.
+- **R-UI-19** Trackpad gestures on the whiteboard (as on macOS): moving two fingers drags (pans) the whiteboard in any direction; pinching zooms, centered on the pointer. A mouse wheel keeps zooming (R-UI-15). On touch screens, moving two fingers also pans.
 
 ## Decisions (first implementation)
 

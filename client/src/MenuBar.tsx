@@ -4,6 +4,9 @@ import type { Format } from './types'
 
 type Menu = 'file' | 'settings'
 
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform)
+const shortcut = (key: string, shift = false) => (IS_MAC ? `${shift ? '⇧' : ''}⌘${key}` : `Ctrl+${shift ? 'Shift+' : ''}${key}`)
+
 interface Props {
   hasDiagram: boolean
   saveFormat: Format
@@ -44,7 +47,7 @@ export function MenuBar(props: Props) {
     }
   }, [open])
 
-  const item = (label: string, action: () => void, disabled = false) => (
+  const item = (label: string, action: () => void, disabled = false, keys?: string) => (
     <button
       role="menuitem"
       disabled={disabled}
@@ -54,6 +57,7 @@ export function MenuBar(props: Props) {
       }}
     >
       {label}
+      {keys && <kbd className="shortcut">{keys}</kbd>}
     </button>
   )
 
@@ -79,8 +83,8 @@ export function MenuBar(props: Props) {
           {open === 'file' && (
             <div className="dropdown" role="menu">
               {item('New', props.onNew)}
-              {item('Save', props.onSave, !hasDiagram)}
-              {item('Save As…', props.onSaveAs, !hasDiagram)}
+              {item('Save', props.onSave, !hasDiagram, shortcut('S'))}
+              {item('Save As…', props.onSaveAs, !hasDiagram, shortcut('S', true))}
               <hr />
               {item('Import…', () => (canPickOpenFile() ? props.onImport() : fileInput.current?.click()))}
               <hr />

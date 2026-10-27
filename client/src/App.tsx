@@ -218,6 +218,23 @@ export function App() {
     })
   }
 
+  // Ctrl/Cmd+S saves, Ctrl/Cmd+Shift+S saves as; the ref keeps the listener on the latest diagram.
+  const saveShortcut = useRef(onSave)
+  saveShortcut.current = onSave
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== 's') {
+        return
+      }
+      e.preventDefault()
+      if (!e.repeat) {
+        saveShortcut.current(e.shiftKey)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   function onImport(chosen?: File) {
     void run(async () => {
       const picked = chosen ? { file: chosen, target: undefined } : await pickOpenFile()
@@ -269,7 +286,7 @@ export function App() {
             <span className="hint">
               {tool === 'edge'
                 ? 'Click the source rectangle, then the target. Repeat for more edges. Esc returns to selection.'
-                : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select rectangles and edges · double-click to rename · Delete removes the selection · wheel to zoom · drag with the wheel pressed to pan'}
+                : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select rectangles and edges · double-click to rename · Delete removes the selection · wheel or pinch to zoom · drag with the wheel pressed or two fingers on the trackpad to pan · Ctrl/Cmd+S saves'}
             </span>
           </header>
           {diagram ? (
