@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import { Canvas } from './Canvas'
 import { LabelInput } from './LabelInput'
+import { MenuBar } from './MenuBar'
 import { Sidebar } from './Sidebar'
 import { Tabs } from './Tabs'
 import type { AlignDirection, Diagram, DiagramSummary, Format, Tool } from './types'
@@ -182,40 +183,45 @@ export function App() {
 
   return (
     <div className="app">
-      <Sidebar
+      <MenuBar
         hasDiagram={diagram !== null}
-        tool={tool}
         onNew={onNew}
         onSave={() => diagramId && void run(() => api.save(diagramId), 'Saved')}
         onImport={(file) => void run(async () => show(await api.importText(await file.text())), `Imported ${file.name}`)}
         onExport={onExport}
-        onAddRectangle={() => void mutate((id) => api.addShape(id, {}))}
-        onToolChange={setTool}
-        selectedShapeCount={selectedShapes.length}
-        onAlign={(direction: AlignDirection) => void mutate((id) => api.align(id, selectedShapes, direction))}
-        onAutoLayout={() => void mutate((id) => api.layout(id))}
       />
-      <main className="main">
-        <Tabs diagrams={diagrams} currentId={diagramId} onSelect={(id) => void open(id)} onClose={onClose} onNew={onNew} />
-        <header className="toolbar">
+      <div className="workspace">
+        <Sidebar
+          hasDiagram={diagram !== null}
+          tool={tool}
+          onAddRectangle={() => void mutate((id) => api.addShape(id, {}))}
+          onToolChange={setTool}
+          selectedShapeCount={selectedShapes.length}
+          onAlign={(direction: AlignDirection) => void mutate((id) => api.align(id, selectedShapes, direction))}
+          onAutoLayout={() => void mutate((id) => api.layout(id))}
+        />
+        <main className="main">
+          <Tabs diagrams={diagrams} currentId={diagramId} onSelect={(id) => void open(id)} onClose={onClose} onNew={onNew} />
+          <header className="toolbar">
+            {diagram ? (
+              <LabelInput key={`${diagram.id}:${diagram.name}`} className="title" ariaLabel="Diagram name" value={diagram.name} onCommit={onRename} />
+            ) : (
+              <span className="title">No diagram open</span>
+            )}
+            <span className="hint">
+              {tool === 'edge'
+                ? 'Click the source rectangle, then the target. Repeat for more edges. Esc returns to selection.'
+                : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select rectangles and edges · double-click to rename · Delete removes the selection'}
+            </span>
+          </header>
           {diagram ? (
-            <LabelInput key={`${diagram.id}:${diagram.name}`} className="title" ariaLabel="Diagram name" value={diagram.name} onCommit={onRename} />
+            <Canvas diagram={diagram} tool={tool} selected={selected} onSelect={setSelection} onToolDone={selectTool} mutate={mutate} />
           ) : (
-            <span className="title">No diagram open</span>
+            <div className="empty">Create a new whiteboard or import a PlantUML / Mermaid file to get started.</div>
           )}
-          <span className="hint">
-            {tool === 'edge'
-              ? 'Click the source rectangle, then the target. Repeat for more edges. Esc returns to selection.'
-              : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select rectangles and edges · double-click to rename · Delete removes the selection'}
-          </span>
-        </header>
-        {diagram ? (
-          <Canvas diagram={diagram} tool={tool} selected={selected} onSelect={setSelection} onToolDone={selectTool} mutate={mutate} />
-        ) : (
-          <div className="empty">Create a new whiteboard or import a PlantUML / Mermaid file to get started.</div>
-        )}
-        <footer className={`status ${error ? 'error' : ''}`}>{error || message}</footer>
-      </main>
+          <footer className={`status ${error ? 'error' : ''}`}>{error || message}</footer>
+        </main>
+      </div>
     </div>
   )
 }

@@ -1,14 +1,9 @@
-import { useRef } from 'react'
 import { SHAPE_MIME } from './Canvas'
-import type { AlignDirection, Format, Tool } from './types'
+import type { AlignDirection, Tool } from './types'
 
 interface Props {
   hasDiagram: boolean
   tool: Tool
-  onNew: () => void
-  onSave: () => void
-  onImport: (file: File) => void
-  onExport: (format: Format) => void
   onAddRectangle: () => void
   onToolChange: (tool: Tool) => void
   selectedShapeCount: number
@@ -17,44 +12,10 @@ interface Props {
 }
 
 export function Sidebar(props: Props) {
-  const fileInput = useRef<HTMLInputElement>(null)
   const hasDiagram = props.hasDiagram
 
   return (
     <aside className="sidebar">
-      <h1>Kandinsky</h1>
-
-      <nav className="menu">
-        <h2>Diagram</h2>
-        <button onClick={props.onNew}>New</button>
-        <button onClick={props.onSave} disabled={!hasDiagram}>
-          Save
-        </button>
-        <button onClick={() => fileInput.current?.click()}>Import…</button>
-        <input
-          ref={fileInput}
-          type="file"
-          hidden
-          accept=".puml,.plantuml,.pu,.iuml,.mmd,.mermaid,.txt"
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            e.target.value = ''
-            if (file) {
-              props.onImport(file)
-            }
-          }}
-        />
-        <div className="export">
-          <span>Export</span>
-          <button onClick={() => props.onExport('plantuml')} disabled={!hasDiagram}>
-            PlantUML
-          </button>
-          <button onClick={() => props.onExport('mermaid')} disabled={!hasDiagram}>
-            Mermaid
-          </button>
-        </div>
-      </nav>
-
       <section className="palette">
         <h2>Palette</h2>
         <button

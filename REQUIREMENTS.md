@@ -36,7 +36,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 
 ## User interface
 
-- **R-UI-1** A menu on the left side with the basic operations:
+- **R-UI-1** A header menu bar at the top of the application with a **File** drop-down menu containing all file operations:
   - **New** — create an empty diagram.
   - **Save** — persist the current diagram on the server.
   - **Export** — download the diagram as PlantUML or Mermaid.
