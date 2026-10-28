@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { canPickOpenFile, formats } from './saveFile'
+import { canPickOpenFile, formats, type ImageFormat } from './saveFile'
 import type { Format } from './types'
 
 type Menu = 'file' | 'settings'
@@ -13,6 +13,7 @@ interface Props {
   onNew: () => void
   onSave: () => void
   onSaveAs: () => void
+  onExport: (format: ImageFormat) => void
   /** Called without a file when the browser offers a file picker that App opens itself. */
   onOpen: (file?: File) => void
   onSaveFormatChange: (format: Format) => void
@@ -89,6 +90,9 @@ export function MenuBar(props: Props) {
               <hr className="dropdown-divider" />
               {item('Save', props.onSave, !hasDiagram, shortcut('S'))}
               {item('Save As…', props.onSaveAs, !hasDiagram, shortcut('S', true))}
+              <hr className="dropdown-divider" />
+              {item('Export as SVG…', () => props.onExport('svg'), !hasDiagram)}
+              {item('Export as PNG…', () => props.onExport('png'), !hasDiagram)}
             </div>
           )}
         </div>

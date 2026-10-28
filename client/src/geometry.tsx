@@ -1,5 +1,5 @@
 import type { PointerEvent } from 'react'
-import type { EdgeRouting, Shape, ShapeKind } from './types'
+import type { Corner, Edge, EdgeCorner, Shape, ShapeKind } from './types'
 
 export interface Point {
   x: number
@@ -207,7 +207,9 @@ function borderPoint(s: Shape, toward: Point): Point {
   return Number.isFinite(best) ? { x: c.x + dx * best, y: c.y + dy * best } : c
 }
 
-type Side = 'top' | 'right' | 'bottom' | 'left'
+type Side = Corner
+
+const SIDES: readonly Side[] = ['top', 'right', 'bottom', 'left']
 
 const SIDE_DIRECTION: Record<Side, Point> = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 } }
 
@@ -217,6 +219,13 @@ function sidePoint(s: Shape, side: Side): Point {
   const d = SIDE_DIRECTION[side]
   return borderPoint(s, { x: c.x + d.x, y: c.y + d.y })
 }
+
+/** The four corners of a diamond (the middles of the sides of other shapes). */
+export const corners = (s: Shape) => SIDES.map((side) => ({ corner: side, point: sidePoint(s, side) }))
+
+/** The corner of a diamond nearest to the point. */
+export const nearestCorner = (s: Shape, p: Point): Corner =>
+  corners(s).reduce((best, c) => (Math.hypot(c.point.x - p.x, c.point.y - p.y) < Math.hypot(best.point.x - p.x, best.point.y - p.y) ? c : best)).corner
 
 /** Where an edge toward the point attaches: on the outline, or at the facing corner of a diamond. */
 function anchor(s: Shape, toward: Point): Point {
@@ -229,16 +238,93 @@ function anchor(s: Shape, toward: Point): Point {
   return sidePoint(s, Math.abs(nx) >= Math.abs(ny) ? (nx >= 0 ? 'right' : 'left') : ny >= 0 ? 'bottom' : 'top')
 }
 
+/** The corner an edge end is fixed to: only diamonds have fixed corners. */
+const fixedCorner = (s: Shape, corner: EdgeCorner | undefined): Side | null =>
+  s.kind === 'decision' && corner && corner !== 'auto' ? corner : null
+
+/** How far an angled edge runs straight out of a side before it turns. */
+const STUB = 20
+
+/** Drops repeated points and points in the middle of a straight run. */
+function simplify(path: Point[]): Point[] {
+  const distinct = path.filter((p, i) => i === 0 || Math.abs(p.x - path[i - 1].x) >= 0.5 || Math.abs(p.y - path[i - 1].y) >= 0.5)
+  return distinct.filter((p, i) => {
+    if (i === 0 || i === distinct.length - 1) {
+      return true
+    }
+    const a = distinct[i - 1]
+    const b = distinct[i + 1]
+    return !((Math.abs(a.x - p.x) < 0.5 && Math.abs(b.x - p.x) < 0.5) || (Math.abs(a.y - p.y) < 0.5 && Math.abs(b.y - p.y) < 0.5))
+  })
+}
+
+/**
+ * Horizontal and vertical segments from point s, leaving in direction ds, to point t, entered against direction dt
+ * (dt points out of the target's side). Turns as rarely as practical and runs a stub out of a side before turning back.
+ */
+function orthogonal(s: Point, ds: Point, t: Point, dt: Point): Point[] {
+  // Does b lie in front of a, looking in direction d?
+  const ahead = (a: Point, d: Point, b: Point) => (b.x - a.x) * d.x + (b.y - a.y) * d.y > 0
+  const s1 = { x: s.x + ds.x * STUB, y: s.y + ds.y * STUB }
+  const t1 = { x: t.x + dt.x * STUB, y: t.y + dt.y * STUB }
+  if (ds.x !== 0 && dt.x !== 0) {
+    if (ds.x === -dt.x && ahead(s, ds, t)) {
+      const m = (s.x + t.x) / 2
+      return simplify([s, { x: m, y: s.y }, { x: m, y: t.y }, t])
+    }
+    if (ds.x === dt.x) {
+      const x = ds.x > 0 ? Math.max(s1.x, t1.x) : Math.min(s1.x, t1.x)
+      return simplify([s, { x, y: s.y }, { x, y: t.y }, t])
+    }
+    const m = (s.y + t.y) / 2
+    return simplify([s, s1, { x: s1.x, y: m }, { x: t1.x, y: m }, t1, t])
+  }
+  if (ds.y !== 0 && dt.y !== 0) {
+    if (ds.y === -dt.y && ahead(s, ds, t)) {
+      const m = (s.y + t.y) / 2
+      return simplify([s, { x: s.x, y: m }, { x: t.x, y: m }, t])
+    }
+    if (ds.y === dt.y) {
+      const y = ds.y > 0 ? Math.max(s1.y, t1.y) : Math.min(s1.y, t1.y)
+      return simplify([s, { x: s.x, y }, { x: t.x, y }, t])
+    }
+    const m = (s.x + t.x) / 2
+    return simplify([s, s1, { x: m, y: s1.y }, { x: m, y: t1.y }, t1, t])
+  }
+  const corner = ds.x !== 0 ? { x: t.x, y: s.y } : { x: s.x, y: t.y }
+  if (ahead(s, ds, corner) && ahead(t, dt, corner)) {
+    return [s, corner, t]
+  }
+  return simplify(ds.x !== 0 ? [s, s1, { x: s1.x, y: t1.y }, t1, t] : [s, s1, { x: t1.x, y: s1.y }, t1, t])
+}
+
+const pathLength = (path: Point[]) => path.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.x - path[i].x, p.y - path[i].y), 0)
+
+/** An angled path between the given sides; a free side (null) is the one giving the fewest turns, then the shortest path. */
+function angledBetween(from: Shape, fromSide: Side | null, to: Shape, toSide: Side | null): Point[] {
+  const paths = (fromSide ? [fromSide] : SIDES).flatMap((a) =>
+    (toSide ? [toSide] : SIDES).map((b) => orthogonal(sidePoint(from, a), SIDE_DIRECTION[a], sidePoint(to, b), SIDE_DIRECTION[b])),
+  )
+  return paths.reduce((best, p) => (p.length < best.length || (p.length === best.length && pathLength(p) < pathLength(best)) ? p : best))
+}
+
+type EdgeStyle = Pick<Edge, 'routing'> & Partial<Pick<Edge, 'sourceCorner' | 'targetCorner'>>
+
 /**
  * The points of an edge from one shape to another. A straight edge is one segment between the outlines.
  * An angled edge leaves and enters through the middle of a side (a diamond's corner) with horizontal and vertical segments:
  * a Z shape when the shapes are above each other or side by side, an L shape when they are diagonal to each other.
- * Overlapping shapes are joined straight.
+ * Overlapping shapes are joined straight. An end fixed to a diamond corner always attaches there.
  */
-export function edgePath(from: Shape, to: Shape, routing: EdgeRouting): Point[] {
+export function edgePath(from: Shape, to: Shape, { routing, sourceCorner, targetCorner }: EdgeStyle): Point[] {
+  const fromCorner = fixedCorner(from, sourceCorner)
+  const toCorner = fixedCorner(to, targetCorner)
   if (routing === 'angled') {
     const dx = to.x >= from.x + from.width ? 1 : to.x + to.width <= from.x ? -1 : 0
     const dy = to.y >= from.y + from.height ? 1 : to.y + to.height <= from.y ? -1 : 0
+    if ((fromCorner || toCorner) && (dx !== 0 || dy !== 0)) {
+      return angledBetween(from, fromCorner, to, toCorner)
+    }
     if (dy !== 0 && dx === 0) {
       const s = sidePoint(from, dy > 0 ? 'bottom' : 'top')
       const t = sidePoint(to, dy > 0 ? 'top' : 'bottom')
@@ -257,8 +343,8 @@ export function edgePath(from: Shape, to: Shape, routing: EdgeRouting): Point[] 
       return [s, { x: t.x, y: s.y }, t]
     }
   }
-  const start = anchor(from, center(to))
-  return [start, anchor(to, start)]
+  const start = fromCorner ? sidePoint(from, fromCorner) : anchor(from, toCorner ? sidePoint(to, toCorner) : center(to))
+  return [start, toCorner ? sidePoint(to, toCorner) : anchor(to, start)]
 }
 
 /** The point halfway along the path, where the edge label goes. */

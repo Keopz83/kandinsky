@@ -21,6 +21,10 @@ export const SHAPE_KINDS: readonly ShapeKind[] = [
 
 export type EdgeRouting = 'straight' | 'angled'
 
+/** A corner of a decision diamond; 'auto' attaches the edge at the corner facing the other end. */
+export type Corner = 'top' | 'right' | 'bottom' | 'left'
+export type EdgeCorner = 'auto' | Corner
+
 export interface Shape {
   id: string
   kind: ShapeKind
@@ -39,6 +43,8 @@ export interface Edge {
   targetId: string
   label: string | null
   routing: EdgeRouting
+  sourceCorner: EdgeCorner
+  targetCorner: EdgeCorner
 }
 
 export interface Diagram {

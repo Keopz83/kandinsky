@@ -82,7 +82,7 @@ public static partial class Mermaid
     private static string ExportFlowchart(Diagram diagram)
     {
         var text = new StringBuilder();
-        // Mermaid can only draw all links as steps; with mixed routing the angled edges are listed in comments.
+        // Mermaid can only draw all links as steps; with mixed routing the angled edges are listed in comments, as are fixed diamond corners.
         var allAngled = diagram.Edges.Count > 0 && diagram.Edges.All(e => e.Routing == EdgeRouting.Angled);
         if (allAngled)
         {
@@ -119,7 +119,7 @@ public static partial class Mermaid
             text.Append($" {edge.TargetId}\n");
         }
         AppendLayout(text, diagram);
-        foreach (var edge in diagram.Edges.Where(e => !allAngled && e.Routing == EdgeRouting.Angled))
+        foreach (var edge in diagram.Edges.Where(e => LayoutComment.Needed(e, allAngled)))
         {
             text.Append("  %% ").Append(LayoutComment.Format(edge)).Append('\n');
         }

@@ -568,8 +568,35 @@ public class FormatTests
     }
 
     [Theory]
+    [InlineData(DiagramFormat.PlantUml, "' kandinsky:edge s1 s2 routing=straight from=bottom to=left\n")]
+    [InlineData(DiagramFormat.Mermaid, "  %% kandinsky:edge s1 s2 routing=straight from=bottom to=left\n")]
+    public void Exports_and_reads_fixed_diamond_corners_in_the_edge_comment(DiagramFormat format, string comment)
+    {
+        var diagram = Shop with
+        {
+            Shapes = [.. Shop.Shapes.Select(s => s.Id == "s1" ? s with { Kind = ShapeKind.Decision } : s)],
+            Edges = [.. Shop.Edges.Select(e => e with { SourceCorner = EdgeCorner.Bottom, TargetCorner = EdgeCorner.Left })],
+        };
+
+        var text = DiagramFormats.Export(diagram, format);
+        var parsed = DiagramFormats.Parse(text, format);
+
+        Assert.Contains(comment, text);
+        Assert.Equal([new("s1", "s2", "places", EdgeRouting.Straight, EdgeCorner.Bottom, EdgeCorner.Left)], parsed.Edges);
+    }
+
+    [Fact]
+    public void Reads_a_single_fixed_corner()
+    {
+        var parsed = Mermaid.Parse("flowchart LR\nA{Ok?} --> B\n%% kandinsky:edge A B routing=angled from=right");
+
+        Assert.Equal([new("A", "B", null, EdgeRouting.Angled, EdgeCorner.Right)], parsed.Edges);
+    }
+
+    [Theory]
     [InlineData("flowchart LR\nA --> B\n%% kandinsky:edge A C routing=angled", "Line 3: routing for unknown edge 'A' -> 'C'.")]
     [InlineData("flowchart LR\nA --> B\n%% kandinsky:edge A B routing=curvy", "Line 3: invalid edge comment, expected 'kandinsky:edge <source> <target> routing=straight|angled'.")]
+    [InlineData("flowchart LR\nA --> B\n%% kandinsky:edge A B routing=angled from=middle", "Line 3: unknown edge corner 'middle', expected top, right, bottom, left or auto.")]
     [InlineData("flowchart LR\nA --> B\n%% kandinsky:layout A x=1 y=2 width=30 height=40 kind=blob", "Line 3: unknown shape kind 'blob'.")]
     public void Reports_invalid_kandinsky_comments(string text, string message)
     {

@@ -74,13 +74,46 @@ public enum EdgeRouting
 }
 
 /// <summary>
+/// The corner of a decision diamond where an edge end is attached. Auto picks the corner facing the other end;
+/// on other shapes the corner is ignored.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<EdgeCorner>))]
+public enum EdgeCorner
+{
+    [JsonStringEnumMemberName("auto")]
+    Auto,
+
+    [JsonStringEnumMemberName("top")]
+    Top,
+
+    [JsonStringEnumMemberName("right")]
+    Right,
+
+    [JsonStringEnumMemberName("bottom")]
+    Bottom,
+
+    [JsonStringEnumMemberName("left")]
+    Left,
+}
+
+/// <summary>
 /// A shape on the diagram canvas, drawn within its bounds. ParentId is the group the shape lies in
 /// (the smallest group whose bounds fully contain it); the server derives it from the positions, so it is read-only.
 /// </summary>
 public sealed record Shape(string Id, string Label, double X, double Y, double Width, double Height, ShapeKind Kind = ShapeKind.Rectangle, string? ParentId = null);
 
-/// <summary>A directed edge from the source shape to the target shape, drawn straight or angled.</summary>
-public sealed record Edge(string Id, string SourceId, string TargetId, string? Label, EdgeRouting Routing = EdgeRouting.Straight);
+/// <summary>
+/// A directed edge from the source shape to the target shape, drawn straight or angled. SourceCorner and TargetCorner
+/// fix the diamond corner the edge is attached to at either end.
+/// </summary>
+public sealed record Edge(
+    string Id,
+    string SourceId,
+    string TargetId,
+    string? Label,
+    EdgeRouting Routing = EdgeRouting.Straight,
+    EdgeCorner SourceCorner = EdgeCorner.Auto,
+    EdgeCorner TargetCorner = EdgeCorner.Auto);
 
 /// <summary>A diagram with its shapes and edges.</summary>
 public sealed record Diagram(string Id, string Name, IReadOnlyList<Shape> Shapes, IReadOnlyList<Edge> Edges);

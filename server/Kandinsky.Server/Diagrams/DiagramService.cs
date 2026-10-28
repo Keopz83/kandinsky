@@ -167,7 +167,9 @@ public sealed class DiagramService
         {
             var diagram = Find(diagramId);
             ValidateEndpoints(diagram, request.SourceId, request.TargetId);
-            var edge = new Edge(NextId(diagram, "e"), request.SourceId, request.TargetId, ValidEdgeLabel(request.Label), request.Routing ?? EdgeRouting.Straight);
+            var edge = new Edge(
+                NextId(diagram, "e"), request.SourceId, request.TargetId, ValidEdgeLabel(request.Label), request.Routing ?? EdgeRouting.Straight,
+                request.SourceCorner ?? EdgeCorner.Auto, request.TargetCorner ?? EdgeCorner.Auto);
             _diagrams[diagramId] = diagram with { Edges = [.. diagram.Edges, edge] };
             return edge;
         }
@@ -185,6 +187,8 @@ public sealed class DiagramService
                 TargetId = request.TargetId ?? edge.TargetId,
                 Label = request.Label is null ? edge.Label : ValidEdgeLabel(request.Label),
                 Routing = request.Routing ?? edge.Routing,
+                SourceCorner = request.SourceCorner ?? (request.SourceId is null || request.SourceId == edge.SourceId ? edge.SourceCorner : EdgeCorner.Auto),
+                TargetCorner = request.TargetCorner ?? (request.TargetId is null || request.TargetId == edge.TargetId ? edge.TargetCorner : EdgeCorner.Auto),
             };
             ValidateEndpoints(diagram, updated.SourceId, updated.TargetId);
             _diagrams[diagramId] = diagram with { Edges = diagram.Edges.Select(e => e.Id == edgeId ? updated : e).ToList() };
@@ -329,7 +333,7 @@ public sealed class DiagramService
 
         var used = parsed.Shapes.Select(s => s.Id).ToHashSet();
         var edges = parsed.Edges
-            .Select(e => new Edge(NextId(used, "e"), e.SourceId, e.TargetId, ValidEdgeLabel(e.Label), e.Routing))
+            .Select(e => new Edge(NextId(used, "e"), e.SourceId, e.TargetId, ValidEdgeLabel(e.Label), e.Routing, e.SourceCorner, e.TargetCorner))
             .ToList();
         var diagram = new Diagram("", "", [], edges);
 

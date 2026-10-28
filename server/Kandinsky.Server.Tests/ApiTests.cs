@@ -246,6 +246,31 @@ public sealed class ApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Fixes_and_releases_the_diamond_corners_of_an_edge()
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+        var url = $"/api/diagrams/{diagram.Id}";
+        var a = await Read<Shape>(await client.PostAsJsonAsync($"{url}/shapes", new { kind = "decision" }), HttpStatusCode.Created);
+        var b = await Read<Shape>(await client.PostAsJsonAsync($"{url}/shapes", new { label = "B" }), HttpStatusCode.Created);
+        var c = await Read<Shape>(await client.PostAsJsonAsync($"{url}/shapes", new { label = "C" }), HttpStatusCode.Created);
+
+        var response = await client.PostAsJsonAsync($"{url}/edges", new { sourceId = a.Id, targetId = b.Id, sourceCorner = "bottom" });
+        Assert.Contains("\"sourceCorner\":\"bottom\",\"targetCorner\":\"auto\"", await response.Content.ReadAsStringAsync());
+        var edge = await Read<Edge>(response, HttpStatusCode.Created);
+        var moved = await Read<Edge>(await client.PatchAsJsonAsync($"{url}/edges/{edge.Id}", new { targetCorner = "left" }), HttpStatusCode.OK);
+        var relabeled = await Read<Edge>(await client.PatchAsJsonAsync($"{url}/edges/{edge.Id}", new { label = "yes" }), HttpStatusCode.OK);
+        var retargeted = await Read<Edge>(await client.PatchAsJsonAsync($"{url}/edges/{edge.Id}", new { targetId = c.Id }), HttpStatusCode.OK);
+        var released = await Read<Edge>(await client.PatchAsJsonAsync($"{url}/edges/{edge.Id}", new { sourceCorner = "auto" }), HttpStatusCode.OK);
+
+        Assert.Equal(EdgeCorner.Bottom, edge.SourceCorner);
+        Assert.Equal(edge with { TargetCorner = EdgeCorner.Left }, moved);
+        Assert.Equal(moved with { Label = "yes" }, relabeled);
+        Assert.Equal(relabeled with { TargetId = c.Id, TargetCorner = EdgeCorner.Auto }, retargeted);
+        Assert.Equal(retargeted with { SourceCorner = EdgeCorner.Auto }, released);
+    }
+
+    [Fact]
     public async Task Deleting_shape_removes_connected_edges()
     {
         var client = CreateClient();

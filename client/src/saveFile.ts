@@ -2,7 +2,7 @@ import type { Format } from './types'
 
 // Minimal typing for the File System Access API (Chromium only, not yet in lib.dom).
 interface WritableFile {
-  write(data: string): Promise<void>
+  write(data: string | Blob): Promise<void>
   close(): Promise<void>
   abort?(): Promise<void>
 }
@@ -37,7 +37,18 @@ export const formats: Record<Format, { label: string; extensions: string[] }> = 
   mermaid: { label: 'Mermaid', extensions: ['.mmd', '.mermaid'] },
 }
 
-export const fileName = (name: string, format: Format) => `${name.replace(/[^\w.-]+/g, '_')}${formats[format].extensions[0]}`
+export const images = {
+  svg: { label: 'SVG image', mime: 'image/svg+xml', extension: '.svg' },
+  png: { label: 'PNG image', mime: 'image/png', extension: '.png' },
+} as const
+
+export type ImageFormat = keyof typeof images
+
+const safeName = (name: string) => name.replace(/[^\w.-]+/g, '_')
+
+export const fileName = (name: string, format: Format) => `${safeName(name)}${formats[format].extensions[0]}`
+
+export const imageFileName = (name: string, format: ImageFormat) => `${safeName(name)}${images[format].extension}`
 
 const MAX_NAME_LENGTH = 200
 
@@ -62,20 +73,30 @@ export function formatOf(file: string, fallback: Format): Format {
   return (Object.keys(formats) as Format[]).find((f) => formats[f].extensions.some((e) => lower.endsWith(e))) ?? fallback
 }
 
-/** Opens the save dialog with the default format offered first. Returns null if the user cancels. */
-export async function pickSaveTarget(name: string, defaultFormat: Format): Promise<SaveTarget | null> {
-  const order: Format[] = defaultFormat === 'plantuml' ? ['plantuml', 'mermaid'] : ['mermaid', 'plantuml']
+async function showSavePicker(options: SavePickerOptions): Promise<SaveTarget | null> {
   try {
-    return await window.showSaveFilePicker!({
-      suggestedName: fileName(name, defaultFormat),
-      types: order.map((f) => ({ description: formats[f].label, accept: { 'text/plain': formats[f].extensions } })),
-    })
+    return await window.showSaveFilePicker!(options)
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') {
       return null
     }
     throw e
   }
+}
+
+/** Opens the save dialog with the default format offered first. Returns null if the user cancels. */
+export function pickSaveTarget(name: string, defaultFormat: Format): Promise<SaveTarget | null> {
+  const order: Format[] = defaultFormat === 'plantuml' ? ['plantuml', 'mermaid'] : ['mermaid', 'plantuml']
+  return showSavePicker({
+    suggestedName: fileName(name, defaultFormat),
+    types: order.map((f) => ({ description: formats[f].label, accept: { 'text/plain': formats[f].extensions } })),
+  })
+}
+
+/** Opens the save dialog for an image export. Returns null if the user cancels. */
+export function pickImageTarget(name: string, format: ImageFormat): Promise<SaveTarget | null> {
+  const image = images[format]
+  return showSavePicker({ suggestedName: imageFileName(name, format), types: [{ description: image.label, accept: { [image.mime]: [image.extension] } }] })
 }
 
 /** Opens the import dialog; the returned target lets Save overwrite the imported file. Returns null if the user cancels. */
@@ -108,8 +129,8 @@ export async function openWritable(target: SaveTarget): Promise<WritableFile | n
   }
 }
 
-/** Writes the text into the opened file; on failure the file keeps its previous content. */
-export async function writeText(writable: WritableFile, text: () => Promise<string>) {
+/** Writes the text (or image) into the opened file; on failure the file keeps its previous content. */
+export async function writeText(writable: WritableFile, text: () => Promise<string | Blob>) {
   try {
     await writable.write(await text())
     await writable.close()
@@ -119,8 +140,8 @@ export async function writeText(writable: WritableFile, text: () => Promise<stri
   }
 }
 
-export function download(file: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
+export function download(file: string, data: string | Blob) {
+  const url = URL.createObjectURL(typeof data === 'string' ? new Blob([data], { type: 'text/plain' }) : data)
   const link = document.createElement('a')
   link.href = url
   link.download = file

@@ -10,7 +10,8 @@ namespace Kandinsky.Server.Formats;
 /// Shape positions are stored in format comments (<c>kandinsky:layout s1 x=40 y=40 width=140 height=60</c>),
 /// because neither PlantUML nor Mermaid can express them. Other tools ignore these comments.
 /// The comment also carries the shape kind (<c>kind=end</c>) when the format can only approximate it, and
-/// <c>kandinsky:edge A B routing=angled</c> comments carry the routing of edges the format cannot express.
+/// <c>kandinsky:edge A B routing=angled</c> comments carry the routing of edges the format cannot express,
+/// and the diamond corners an edge is attached to (<c>from=bottom to=left</c>) when they are fixed.
 /// </summary>
 internal static partial class LayoutComment
 {
@@ -21,12 +22,21 @@ internal static partial class LayoutComment
     private static readonly Dictionary<string, ShapeKind> Kinds = KindNames.ToDictionary(p => p.Value, p => p.Key);
     private static readonly Dictionary<EdgeRouting, string> RoutingNames = Names<EdgeRouting>();
     private static readonly Dictionary<string, EdgeRouting> Routings = RoutingNames.ToDictionary(p => p.Value, p => p.Key);
+    private static readonly Dictionary<EdgeCorner, string> CornerNames = Names<EdgeCorner>();
+    private static readonly Dictionary<string, EdgeCorner> Corners = CornerNames.ToDictionary(p => p.Value, p => p.Key);
 
     public static string Format(Shape shape, bool withKind = false) =>
         string.Create(CultureInfo.InvariantCulture, $"{Keyword} {shape.Id} x={shape.X} y={shape.Y} width={shape.Width} height={shape.Height}")
         + (withKind ? $" kind={KindNames[shape.Kind]}" : "");
 
-    public static string Format(Edge edge) => $"{EdgeKeyword} {edge.SourceId} {edge.TargetId} routing={RoutingNames[edge.Routing]}";
+    public static string Format(Edge edge) =>
+        $"{EdgeKeyword} {edge.SourceId} {edge.TargetId} routing={RoutingNames[edge.Routing]}"
+        + (edge.SourceCorner == EdgeCorner.Auto ? "" : $" from={CornerNames[edge.SourceCorner]}")
+        + (edge.TargetCorner == EdgeCorner.Auto ? "" : $" to={CornerNames[edge.TargetCorner]}");
+
+    /// <summary>Does the edge need an edge comment: angled among other routings, or attached to fixed diamond corners?</summary>
+    public static bool Needed(Edge edge, bool allAngled) =>
+        (!allAngled && edge.Routing == EdgeRouting.Angled) || edge.SourceCorner != EdgeCorner.Auto || edge.TargetCorner != EdgeCorner.Auto;
 
     /// <summary>Reads the text of a comment; other comments are ignored.</summary>
     public static void Read(string comment, int line, ParsedDiagramBuilder builder)
@@ -38,7 +48,18 @@ internal static partial class LayoutComment
             {
                 throw ParsedDiagramBuilder.Error(line, $"invalid edge comment, expected '{EdgeKeyword} <source> <target> routing=straight|angled'.");
             }
-            builder.SetEdgeRouting(line, edge.Groups["source"].Value, edge.Groups["target"].Value, routing);
+            EdgeCorner Corner(string name)
+            {
+                var group = edge.Groups[name];
+                if (!group.Success)
+                {
+                    return EdgeCorner.Auto;
+                }
+                return Corners.TryGetValue(group.Value, out var corner)
+                    ? corner
+                    : throw ParsedDiagramBuilder.Error(line, $"unknown edge corner '{group.Value}', expected top, right, bottom, left or auto.");
+            }
+            builder.SetEdgeRouting(line, edge.Groups["source"].Value, edge.Groups["target"].Value, routing, Corner("from"), Corner("to"));
             return;
         }
         if (!comment.StartsWith(Keyword, StringComparison.Ordinal))
@@ -67,6 +88,6 @@ internal static partial class LayoutComment
     [GeneratedRegex(@"^kandinsky:layout\s+(?<id>\w+)\s+x=(?<x>-?\d+(?:\.\d+)?)\s+y=(?<y>-?\d+(?:\.\d+)?)\s+width=(?<width>\d+(?:\.\d+)?)\s+height=(?<height>\d+(?:\.\d+)?)(?:\s+kind=(?<kind>[\w-]+))?$")]
     private static partial Regex Pattern();
 
-    [GeneratedRegex(@"^kandinsky:edge\s+(?<source>\w+)\s+(?<target>\w+)\s+routing=(?<routing>\w+)$")]
+    [GeneratedRegex(@"^kandinsky:edge\s+(?<source>\w+)\s+(?<target>\w+)\s+routing=(?<routing>\w+)(?:\s+from=(?<from>\w+))?(?:\s+to=(?<to>\w+))?$")]
     private static partial Regex EdgePattern();
 }

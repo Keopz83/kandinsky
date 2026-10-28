@@ -121,7 +121,9 @@ public static class DiagramEndpoints
             })
             .WithName("AddEdge")
             .WithSummary("Connect two shapes with a directed edge")
-            .WithDescription("`routing` is `straight` (default) or `angled` (horizontal and vertical segments).");
+            .WithDescription(
+                "`routing` is `straight` (default) or `angled` (horizontal and vertical segments). "
+                + "`sourceCorner` and `targetCorner` (`auto` by default, `top`, `right`, `bottom`, `left`) fix the corner of a decision diamond the edge is attached to.");
 
         edges.MapGet("/{edgeId}", (string id, string edgeId, DiagramService service) => TypedResults.Ok(service.GetEdge(id, edgeId)))
             .WithName("GetEdge")

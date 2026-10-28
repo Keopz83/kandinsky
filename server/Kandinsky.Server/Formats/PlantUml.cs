@@ -86,8 +86,8 @@ public static partial class PlantUml
             var approximated = shape.Kind != ShapeKind.Group && ImportedKind(Keyword(shape.Kind)) != shape.Kind;
             text.Append("' ").Append(LayoutComment.Format(shape, withKind: approximated)).Append('\n');
         }
-        // PlantUML can only make all lines orthogonal; with mixed routing the angled edges are listed.
-        foreach (var edge in diagram.Edges.Where(e => !allAngled && e.Routing == EdgeRouting.Angled))
+        // PlantUML can only make all lines orthogonal; with mixed routing the angled edges are listed, as are fixed diamond corners.
+        foreach (var edge in diagram.Edges.Where(e => LayoutComment.Needed(e, allAngled)))
         {
             text.Append("' ").Append(LayoutComment.Format(edge)).Append('\n');
         }

@@ -377,6 +377,29 @@ marker .arrow-selected {
   pointer-events: none;
 }
 
+.corner-handle {
+  fill: var(--accent);
+  stroke: white;
+  stroke-width: 1.5;
+  cursor: move;
+}
+
+.corner-target {
+  fill: white;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.corner-target.active {
+  fill: var(--accent);
+}
+
+.canvas.cornering,
+.canvas.cornering * {
+  cursor: move;
+}
+
 .empty {
   flex: 1;
   place-items: center;

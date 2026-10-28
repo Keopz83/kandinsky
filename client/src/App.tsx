@@ -2,7 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import { Canvas } from './Canvas'
 import { MenuBar } from './MenuBar'
-import { canPickSaveLocation, detectFormat, download, fileName, formatOf, formats, nameOf, openWritable, pickOpenFile, pickSaveTarget, writeText, type SaveTarget } from './saveFile'
+import { diagramPng, diagramSvg } from './exportImage'
+import {
+  canPickSaveLocation, detectFormat, download, fileName, formatOf, formats, imageFileName, images, nameOf, openWritable, pickImageTarget, pickOpenFile,
+  pickSaveTarget, writeText, type ImageFormat, type SaveTarget,
+} from './saveFile'
 import { Sidebar } from './Sidebar'
 import { Tabs } from './Tabs'
 import type { AlignDirection, Diagram, DiagramSummary, Format, Tool } from './types'
@@ -240,6 +244,37 @@ export function App() {
     })
   }
 
+  /** Exports the whiteboard as an SVG or PNG image, like Save: to a file chosen in the dialog, else as a download. */
+  function onExport(format: ImageFormat) {
+    if (!diagram) {
+      return
+    }
+    const current = diagram
+    void run(async () => {
+      // Rendering the SVG is synchronous, so an empty whiteboard is reported before the dialog opens.
+      const svg = diagramSvg(current)
+      const render = async () => (format === 'svg' ? new Blob([svg.svg], { type: images.svg.mime }) : diagramPng(svg))
+      if (!canPickSaveLocation()) {
+        const file = imageFileName(current.name, format)
+        download(file, await render())
+        setMessage(`Downloaded ${file}`)
+        return
+      }
+      const target = await pickImageTarget(current.name, format)
+      if (!target) {
+        return
+      }
+      const writable = await openWritable(target)
+      if (!writable) {
+        download(target.name, await render())
+        setMessage(`The browser does not allow writing to ${target.name} here; downloaded it instead`)
+        return
+      }
+      await writeText(writable, render)
+      setMessage(`Exported ${target.name} (${images[format].label})`)
+    })
+  }
+
   // Ctrl/Cmd+S saves, Ctrl/Cmd+Shift+S saves as; the ref keeps the listener on the latest diagram.
   const saveShortcut = useRef(onSave)
   saveShortcut.current = onSave
@@ -292,6 +327,7 @@ export function App() {
         onNew={onNew}
         onSave={() => onSave(false)}
         onSaveAs={() => onSave(true)}
+        onExport={onExport}
         onOpen={onOpen}
         onSaveFormatChange={onSaveFormatChange}
       />
@@ -314,7 +350,7 @@ export function App() {
                 ? 'Click on the canvas to place a group. Shapes lying fully inside a group belong to it and move with it. Esc cancels.'
                 : tool !== 'select'
                 ? `Click on the canvas to place a ${tool}. Esc cancels.`
-                : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select rectangles and edges · double-click to rename · right-click an edge to make it straight or angled · Delete removes the selection · wheel or pinch to zoom · drag with the wheel pressed or two fingers on the trackpad to pan · Ctrl/Cmd+V pastes PlantUML / Mermaid · Ctrl/Cmd+S saves'}
+                : "Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select rectangles and edges · double-click to rename · right-click an edge to make it straight or angled · drag the dot on a selected edge's diamond end to change the corner · Delete removes the selection · wheel or pinch to zoom · drag with the wheel pressed or two fingers on the trackpad to pan · Ctrl/Cmd+V pastes PlantUML / Mermaid · Ctrl/Cmd+S saves"}
             </span>
           </header>
           {diagram ? (

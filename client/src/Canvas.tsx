@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import type { DragEvent, MouseEvent as ReactMouseEvent, PointerEvent } from 'react'
 import { api } from './api'
 import { LabelInput } from './LabelInput'
-import { DEFAULT_SIZE, ShapeOutline, boxOf, center, drawOrder, edgePath, labelBelow, labelBox, pathMidpoint, pathTouches, shapeTouches, toPoints, withContent } from './geometry'
+import { DEFAULT_SIZE, ShapeOutline, boxOf, center, corners, drawOrder, edgePath, labelBelow, labelBox, nearestCorner, pathMidpoint, pathTouches, shapeTouches, toPoints, withContent } from './geometry'
 import type { Point } from './geometry'
 import { SHAPE_KINDS } from './types'
-import type { Diagram, Edge, EdgeRouting, Shape, ShapeKind, Tool } from './types'
+import type { Corner, Diagram, Edge, EdgeRouting, Shape, ShapeKind, Tool } from './types'
 
 export const SHAPE_MIME = 'application/x-kandinsky-shape'
 
@@ -38,6 +38,21 @@ interface Drag {
   edges: Edge[]
   active: boolean
 }
+
+/** Dragging an end of an edge to another corner of the diamond it is attached to. */
+interface CornerDrag {
+  edgeId: string
+  end: 'source' | 'target'
+  /** The corner nearest to the pointer, where the end goes when released. */
+  corner: Corner
+  moved: boolean
+}
+
+const cornerKey = (end: CornerDrag['end']) => (end === 'source' ? 'sourceCorner' : 'targetCorner')
+
+/** The edge as drawn while one of its ends is dragged to another corner. */
+const withCornerDrag = (edge: Edge, drag: CornerDrag | null): Edge =>
+  drag?.edgeId === edge.id ? { ...edge, [cornerKey(drag.end)]: drag.corner } : edge
 
 /** The right-click menu of an edge, at a position within the canvas. */
 interface EdgeMenu {
@@ -115,6 +130,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   const [edgeSource, setEdgeSource] = useState<string | null>(null)
   const [pointer, setPointer] = useState<Point | null>(null)
   const [menu, setMenu] = useState<EdgeMenu | null>(null)
+  const [cornerDrag, setCornerDrag] = useState<CornerDrag | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   // Last mouse position over the whiteboard (client coordinates), where pasted diagrams are centered.
   const hover = useRef<{ clientX: number; clientY: number } | null>(null)
@@ -196,6 +212,37 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   function setRouting(edgeId: string, routing: EdgeRouting) {
     setMenu(null)
     void mutate((d) => api.updateEdge(d, edgeId, { routing }))
+  }
+
+  function releaseCorners(edgeId: string) {
+    setMenu(null)
+    void mutate((d) => api.updateEdge(d, edgeId, { sourceCorner: 'auto', targetCorner: 'auto' }))
+  }
+
+  /** Grabs the end of the selected edge that is attached to a diamond. */
+  function startCornerDrag(e: PointerEvent, edge: Edge, end: CornerDrag['end']) {
+    e.stopPropagation()
+    if (e.button !== 0) {
+      return
+    }
+    const shape = byId.get(end === 'source' ? edge.sourceId : edge.targetId)
+    if (shape) {
+      setCornerDrag({ edgeId: edge.id, end, corner: nearestCorner(shape, toPoint(e)), moved: false })
+    }
+  }
+
+  /** Releasing the dragged end fixes it to the nearest corner; leaving the whiteboard cancels. */
+  async function endCornerDrag(commit: boolean) {
+    if (!cornerDrag) {
+      return
+    }
+    const edge = diagram.edges.find((edge) => edge.id === cornerDrag.edgeId)
+    const key = cornerKey(cornerDrag.end)
+    if (commit && cornerDrag.moved && edge && edge[key] !== cornerDrag.corner) {
+      // Keep showing the dragged corner until the server state has been reloaded.
+      await mutate((d) => api.updateEdge(d, edge.id, { [key]: cornerDrag.corner }))
+    }
+    setCornerDrag(null)
   }
 
   // Ctrl/Cmd+V pastes PlantUML or Mermaid text from the clipboard, centered on the mouse or else the visible area.
@@ -390,6 +437,13 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     if (source) {
       setPointer(p)
     }
+    if (cornerDrag) {
+      const edge = diagram.edges.find((edge) => edge.id === cornerDrag.edgeId)
+      const shape = edge && byId.get(cornerDrag.end === 'source' ? edge.sourceId : edge.targetId)
+      if (shape) {
+        setCornerDrag({ ...cornerDrag, corner: nearestCorner(shape, p), moved: true })
+      }
+    }
     if (marquee) {
       setMarquee({ ...marquee, current: p })
     }
@@ -434,7 +488,10 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
         }
         const edgeIds: string[] = []
         for (const edge of drag.edges) {
-          const copy = await api.addEdge(d, copies.get(edge.sourceId)!, copies.get(edge.targetId)!, edge.routing, edge.label)
+          const copy = await api.addEdge(d, copies.get(edge.sourceId)!, copies.get(edge.targetId)!, edge.routing, edge.label, {
+            sourceCorner: edge.sourceCorner,
+            targetCorner: edge.targetCorner,
+          })
           edgeIds.push(copy.id)
         }
         // Endpoints copied only to carry an edge along weren't selected, so they don't become selected either.
@@ -488,7 +545,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
           if (!from || !to) {
             return false
           }
-          return pathTouches(edgePath(from, to, edge.routing), box)
+          return pathTouches(edgePath(from, to, edge), box)
         })
         .map((edge) => edge.id),
     ]
@@ -499,6 +556,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
 
   function onPointerUp(e: PointerEvent) {
     endConnect(e.type === 'pointerup' ? toPoint(e) : null)
+    void endCornerDrag(e.type === 'pointerup')
     endMarquee()
     void endDrag()
   }
@@ -538,6 +596,43 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   const dropTarget = hovered?.id !== source?.id ? hovered : undefined
 
   const grid = GRID * view.zoom
+
+  // The ends of the only selected edge that are attached to a diamond get a handle to move them to another corner.
+  const cornerEdge = tool === 'select' && selected.length === 1 && selectedEdges.length === 1 ? withCornerDrag(selectedEdges[0], cornerDrag) : null
+
+  function renderCornerHandles(edge: Edge) {
+    const from = byId.get(edge.sourceId)
+    const to = byId.get(edge.targetId)
+    if (!from || !to) {
+      return null
+    }
+    const path = edgePath(from, to, edge)
+    const ends = [
+      { end: 'source' as const, shape: from, point: path[0] },
+      { end: 'target' as const, shape: to, point: path[path.length - 1] },
+    ].filter(({ shape }) => shape.kind === 'decision')
+    return (
+      <g>
+        {ends.map(({ end, shape, point }) =>
+          cornerDrag?.end === end ? (
+            corners(shape).map(({ corner, point }) => (
+              <circle key={`${end}-${corner}`} className={`corner-target ${corner === cornerDrag.corner ? 'active' : ''}`} cx={point.x} cy={point.y} r={5} />
+            ))
+          ) : (
+            <circle
+              key={end}
+              className="corner-handle"
+              cx={point.x}
+              cy={point.y}
+              r={5}
+              aria-label={`Move the ${end} end to another corner`}
+              onPointerDown={(e) => startCornerDrag(e, edge, end)}
+            />
+          ),
+        )}
+      </g>
+    )
+  }
 
   function renderShape(shape: Shape) {
     const isSelected = selected.includes(shape.id)
@@ -584,7 +679,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
 
   return (
     <div
-      className={`canvas ${connecting ? 'connecting' : ''} ${placing ? 'placing' : ''} ${pan || touchPan ? 'panning' : ''}`}
+      className={`canvas ${connecting ? 'connecting' : ''} ${placing ? 'placing' : ''} ${pan || touchPan ? 'panning' : ''} ${cornerDrag ? 'cornering' : ''}`}
       onPointerDownCapture={onPanStart}
       onPointerMoveCapture={onPanMove}
       onPointerUpCapture={onPanEnd}
@@ -621,7 +716,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
             if (!from || !to) {
               return null
             }
-            const path = edgePath(from, to, edge.routing)
+            const path = edgePath(from, to, withCornerDrag(edge, cornerDrag))
             const middle = pathMidpoint(path)
             const selected = selectedEdges.includes(edge)
             const isEditing = editing?.kind === 'edge' && editing.id === edge.id
@@ -664,6 +759,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
 
           {ordered.filter((shape) => shape.kind !== 'group').map(renderShape)}
 
+          {cornerEdge && renderCornerHandles(cornerEdge)}
+
           {drag?.copy && <CopyGhosts drag={drag} />}
 
           {marquee && <rect className="marquee" {...boxOf(marquee.start, marquee.current)} />}
@@ -673,7 +770,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
               className="preview"
               points={toPoints(
                 routing === 'angled'
-                  ? edgePath(source, { id: '', kind: 'rectangle', label: '', x: pointer.x, y: pointer.y, width: 0, height: 0 }, 'angled')
+                  ? edgePath(source, { id: '', kind: 'rectangle', label: '', x: pointer.x, y: pointer.y, width: 0, height: 0 }, { routing: 'angled' })
                   : [center(source), pointer],
               )}
             />
@@ -691,6 +788,21 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
               </button>
             )
           })}
+          {(() => {
+            const edge = diagram.edges.find((edge) => edge.id === menu.edgeId)
+            return (
+              edge &&
+              (edge.sourceCorner !== 'auto' || edge.targetCorner !== 'auto') && (
+                <>
+                  <hr className="dropdown-divider" />
+                  <button type="button" role="menuitem" className="dropdown-item" onClick={() => releaseCorners(edge.id)}>
+                    <span className="check" />
+                    Automatic diamond corners
+                  </button>
+                </>
+              )
+            )
+          })()}
         </div>
       )}
     </div>
@@ -702,7 +814,7 @@ function CopyGhosts({ drag }: { drag: Drag }) {
   return (
     <g pointerEvents="none">
       {drag.edges.map((edge) => {
-        const path = edgePath(byId.get(edge.sourceId)!, byId.get(edge.targetId)!, edge.routing)
+        const path = edgePath(byId.get(edge.sourceId)!, byId.get(edge.targetId)!, edge)
         return (
           <g key={edge.id} className="edge ghost">
             <polyline className="line" points={toPoints(path)} markerEnd="url(#arrow)" />

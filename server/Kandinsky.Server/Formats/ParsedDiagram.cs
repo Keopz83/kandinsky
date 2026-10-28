@@ -10,7 +10,9 @@ public sealed record ParsedBounds(double X, double Y, double Width, double Heigh
 /// <summary>A shape read from a text format; ParentId is the group (PlantUML package, Mermaid subgraph) it was declared in.</summary>
 public sealed record ParsedShape(string Id, string Label, ParsedBounds? Bounds = null, ShapeKind Kind = ShapeKind.Rectangle, string? ParentId = null);
 
-public sealed record ParsedEdge(string SourceId, string TargetId, string? Label, EdgeRouting Routing = EdgeRouting.Straight);
+public sealed record ParsedEdge(
+    string SourceId, string TargetId, string? Label, EdgeRouting Routing = EdgeRouting.Straight,
+    EdgeCorner SourceCorner = EdgeCorner.Auto, EdgeCorner TargetCorner = EdgeCorner.Auto);
 
 /// <summary>Diagram content read from a text format, with the shape layout if the text contains layout comments.</summary>
 public sealed record ParsedDiagram(string? Title, IReadOnlyList<ParsedShape> Shapes, IReadOnlyList<ParsedEdge> Edges);
@@ -27,7 +29,7 @@ internal sealed partial class ParsedDiagramBuilder(string text, bool laterGroups
     private readonly Dictionary<string, int> _shapeIndex = [];
     private readonly List<ParsedEdge> _edges = [];
     private readonly List<(int Line, string Id, ParsedBounds Bounds, ShapeKind? Kind)> _layout = [];
-    private readonly List<(int Line, string Source, string Target, EdgeRouting Routing)> _routing = [];
+    private readonly List<(int Line, string Source, string Target, EdgeRouting Routing, EdgeCorner SourceCorner, EdgeCorner TargetCorner)> _routing = [];
     private readonly Stack<(int Line, string Id)> _groups = [];
 
     public string? Title { get; set; }
@@ -119,8 +121,10 @@ internal sealed partial class ParsedDiagramBuilder(string text, bool laterGroups
     /// <summary>Sets the bounds of a shape and, if given, its kind (for kinds the format can only approximate).</summary>
     public void SetLayout(int line, string id, ParsedBounds bounds, ShapeKind? kind = null) => _layout.Add((line, id, bounds, kind));
 
-    /// <summary>Sets the routing of the next edge from source to target that has none set by a comment yet.</summary>
-    public void SetEdgeRouting(int line, string source, string target, EdgeRouting routing) => _routing.Add((line, source, target, routing));
+    /// <summary>Sets the routing and diamond corners of the next edge from source to target that has none set by a comment yet.</summary>
+    public void SetEdgeRouting(
+        int line, string source, string target, EdgeRouting routing, EdgeCorner sourceCorner = EdgeCorner.Auto, EdgeCorner targetCorner = EdgeCorner.Auto) =>
+        _routing.Add((line, source, target, routing, sourceCorner, targetCorner));
 
     public ParsedDiagram Build()
     {
@@ -140,7 +144,7 @@ internal sealed partial class ParsedDiagramBuilder(string text, bool laterGroups
 
         var edges = _edges.Select(e => e with { Routing = DefaultRouting }).ToList();
         var routed = new HashSet<int>();
-        foreach (var (line, source, target, routing) in _routing)
+        foreach (var (line, source, target, routing, sourceCorner, targetCorner) in _routing)
         {
             var index = Enumerable.Range(0, edges.Count)
                 .FirstOrDefault(i => !routed.Contains(i) && edges[i].SourceId == source && edges[i].TargetId == target, -1);
@@ -149,7 +153,7 @@ internal sealed partial class ParsedDiagramBuilder(string text, bool laterGroups
                 throw Error(line, $"routing for unknown edge '{source}' -> '{target}'.");
             }
             routed.Add(index);
-            edges[index] = edges[index] with { Routing = routing };
+            edges[index] = edges[index] with { Routing = routing, SourceCorner = sourceCorner, TargetCorner = targetCorner };
         }
         return new(Title, _shapes, edges);
     }

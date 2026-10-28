@@ -12,11 +12,16 @@ public sealed record CreateShapeRequest(string? Label, double? X, double? Y, dou
 /// <summary>Partial update of a shape. Omitted properties stay unchanged.</summary>
 public sealed record UpdateShapeRequest(string? Label, double? X, double? Y, double? Width, double? Height, ShapeKind? Kind = null);
 
-/// <summary>Payload for adding a directed edge between two existing shapes; straight unless Routing says otherwise.</summary>
-public sealed record CreateEdgeRequest(string SourceId, string TargetId, string? Label, EdgeRouting? Routing = null);
+/// <summary>Payload for adding a directed edge between two existing shapes; straight with automatic corners unless set otherwise.</summary>
+public sealed record CreateEdgeRequest(
+    string SourceId, string TargetId, string? Label, EdgeRouting? Routing = null, EdgeCorner? SourceCorner = null, EdgeCorner? TargetCorner = null);
 
-/// <summary>Partial update of an edge. Omitted properties stay unchanged; an empty label removes the label.</summary>
-public sealed record UpdateEdgeRequest(string? Label, string? SourceId, string? TargetId, EdgeRouting? Routing = null);
+/// <summary>
+/// Partial update of an edge. Omitted properties stay unchanged; an empty label removes the label, a corner of
+/// <c>auto</c> releases it. A new source or target without a corner resets that end's corner to <c>auto</c>.
+/// </summary>
+public sealed record UpdateEdgeRequest(
+    string? Label, string? SourceId, string? TargetId, EdgeRouting? Routing = null, EdgeCorner? SourceCorner = null, EdgeCorner? TargetCorner = null);
 
 /// <summary>
 /// Payload for importing a diagram. Format is "plantuml" or "mermaid"; detected from the text when omitted.
