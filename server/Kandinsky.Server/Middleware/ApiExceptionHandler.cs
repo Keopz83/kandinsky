@@ -4,29 +4,31 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Kandinsky.Server.Middleware;
 
-/// <summary>Maps domain exceptions to problem details responses.</summary>
+/// <summary>Maps domain exceptions to problem details responses; other exceptions are left to the default handler.</summary>
 internal sealed class ApiExceptionHandler(IProblemDetailsService problemDetails, ILogger<ApiExceptionHandler> logger) : IExceptionHandler
 {
+    private const string BadRequestTitle = "Bad Request";
+
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
-        var (status, title, detail) = exception switch
-        {
-            NotFoundException => (StatusCodes.Status404NotFound, "Not Found", exception.Message),
-            DiagramValidationException => (StatusCodes.Status400BadRequest, "Bad Request", exception.Message),
-            BadHttpRequestException badRequest => (badRequest.StatusCode, "Bad Request", "The request is malformed."),
-            _ => (0, null, null),
-        };
-        if (status == 0)
+        if (ToProblem(exception) is not { } problem)
         {
             return false;
         }
 
-        logger.LogInformation("Request failed with {Status}: {Detail}", status, detail);
-        httpContext.Response.StatusCode = status;
-        return await problemDetails.TryWriteAsync(new ProblemDetailsContext
-        {
-            HttpContext = httpContext,
-            ProblemDetails = new ProblemDetails { Status = status, Title = title, Detail = detail },
-        });
+        logger.LogInformation("Request failed with {Status}: {Detail}", problem.Status, problem.Detail);
+        httpContext.Response.StatusCode = problem.Status!.Value;
+        return await problemDetails.TryWriteAsync(new ProblemDetailsContext { HttpContext = httpContext, ProblemDetails = problem });
     }
+
+    // Domain exception messages are safe to return to clients; parser messages of malformed requests are not.
+    private static ProblemDetails? ToProblem(Exception exception) => exception switch
+    {
+        NotFoundException => Problem(StatusCodes.Status404NotFound, "Not Found", exception.Message),
+        DiagramValidationException => Problem(StatusCodes.Status400BadRequest, BadRequestTitle, exception.Message),
+        BadHttpRequestException badRequest => Problem(badRequest.StatusCode, BadRequestTitle, "The request is malformed."),
+        _ => null,
+    };
+
+    private static ProblemDetails Problem(int status, string title, string detail) => new() { Status = status, Title = title, Detail = detail };
 }

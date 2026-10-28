@@ -8,13 +8,25 @@ namespace Kandinsky.Server.Endpoints;
 
 public static class DiagramEndpoints
 {
+    private const string BasePath = "/api/diagrams";
+    private const string PlainTextUtf8 = "text/plain; charset=utf-8";
+
     public static void MapDiagramEndpoints(this WebApplication app)
     {
-        var diagrams = app.MapGroup("/api/diagrams")
+        var diagrams = app.MapGroup(BasePath)
             .WithTags("Diagrams")
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        MapDiagrams(diagrams);
+        MapTextFormats(diagrams);
+        MapLayout(diagrams);
+        MapShapes(diagrams.MapGroup("/{id}/shapes").WithTags("Shapes"));
+        MapEdges(diagrams.MapGroup("/{id}/edges").WithTags("Edges"));
+    }
+
+    private static void MapDiagrams(RouteGroupBuilder diagrams)
+    {
         diagrams.MapGet("/", (DiagramService service) => TypedResults.Ok(service.List()))
             .WithName("ListDiagrams")
             .WithSummary("List all diagrams");
@@ -22,7 +34,7 @@ public static class DiagramEndpoints
         diagrams.MapPost("/", ([FromBody] CreateDiagramRequest? request, DiagramService service) =>
             {
                 var diagram = service.Create(request?.Name);
-                return TypedResults.Created($"/api/diagrams/{diagram.Id}", diagram);
+                return TypedResults.Created($"{BasePath}/{diagram.Id}", diagram);
             })
             .WithName("CreateDiagram")
             .WithSummary("Create an empty diagram");
@@ -50,9 +62,12 @@ public static class DiagramEndpoints
             })
             .WithName("SaveDiagram")
             .WithSummary("Persist the current state of a diagram on the server");
+    }
 
+    private static void MapTextFormats(RouteGroupBuilder diagrams)
+    {
         diagrams.MapGet("/{id}/export", (string id, string format, DiagramService service) =>
-                TypedResults.Text(service.Export(id, DiagramFormats.Parse(format)), "text/plain; charset=utf-8"))
+                TypedResults.Text(service.Export(id, DiagramFormats.Parse(format)), PlainTextUtf8))
             .WithName("ExportDiagram")
             .WithSummary("Export a diagram as PlantUML or Mermaid text")
             .WithDescription("Query parameter `format` is `plantuml` or `mermaid`.")
@@ -61,7 +76,7 @@ public static class DiagramEndpoints
         diagrams.MapPost("/import", (ImportDiagramRequest request, DiagramService service) =>
             {
                 var diagram = service.Import(request);
-                return TypedResults.Created($"/api/diagrams/{diagram.Id}", diagram);
+                return TypedResults.Created($"{BasePath}/{diagram.Id}", diagram);
             })
             .WithName("ImportDiagram")
             .WithSummary("Create a diagram from PlantUML or Mermaid text")
@@ -71,7 +86,10 @@ public static class DiagramEndpoints
             .WithName("PasteDiagram")
             .WithSummary("Add the classes and associations of PlantUML or Mermaid text to a diagram")
             .WithDescription("The pasted shapes keep their relative layout (layout comments, else auto-layout) and are centered on `centerX`/`centerY`, else placed below the existing shapes. Ids already used in the diagram are replaced. Returns the updated diagram and the ids of the added shapes and edges.");
+    }
 
+    private static void MapLayout(RouteGroupBuilder diagrams)
+    {
         diagrams.MapPost("/{id}/align", (string id, AlignShapesRequest request, DiagramService service) => TypedResults.Ok(service.Align(id, request)))
             .WithTags("Layout")
             .WithName("AlignShapes")
@@ -83,13 +101,14 @@ public static class DiagramEndpoints
             .WithName("AutoLayout")
             .WithSummary("Arrange all shapes automatically")
             .WithDescription("Connected shapes are placed in layers following the edge direction, unconnected shapes in a grid below. Returns the updated diagram.");
+    }
 
-        var shapes = diagrams.MapGroup("/{id}/shapes").WithTags("Shapes");
-
+    private static void MapShapes(RouteGroupBuilder shapes)
+    {
         shapes.MapPost("/", (string id, CreateShapeRequest request, DiagramService service) =>
             {
                 var shape = service.AddShape(id, request);
-                return TypedResults.Created($"/api/diagrams/{id}/shapes/{shape.Id}", shape);
+                return TypedResults.Created($"{BasePath}/{id}/shapes/{shape.Id}", shape);
             })
             .WithName("AddShape")
             .WithSummary("Add a shape")
@@ -111,13 +130,14 @@ public static class DiagramEndpoints
             })
             .WithName("DeleteShape")
             .WithSummary("Delete a shape and its connected edges; a group is deleted with everything inside it");
+    }
 
-        var edges = diagrams.MapGroup("/{id}/edges").WithTags("Edges");
-
+    private static void MapEdges(RouteGroupBuilder edges)
+    {
         edges.MapPost("/", (string id, CreateEdgeRequest request, DiagramService service) =>
             {
                 var edge = service.AddEdge(id, request);
-                return TypedResults.Created($"/api/diagrams/{id}/edges/{edge.Id}", edge);
+                return TypedResults.Created($"{BasePath}/{id}/edges/{edge.Id}", edge);
             })
             .WithName("AddEdge")
             .WithSummary("Connect two shapes with a directed edge")

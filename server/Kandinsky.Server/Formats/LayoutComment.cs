@@ -15,18 +15,18 @@ namespace Kandinsky.Server.Formats;
 /// </summary>
 internal static partial class LayoutComment
 {
-    private const string Keyword = "kandinsky:layout";
+    private const string ShapeKeyword = "kandinsky:layout";
     private const string EdgeKeyword = "kandinsky:edge";
 
-    private static readonly Dictionary<ShapeKind, string> KindNames = Names<ShapeKind>();
-    private static readonly Dictionary<string, ShapeKind> Kinds = KindNames.ToDictionary(p => p.Value, p => p.Key);
-    private static readonly Dictionary<EdgeRouting, string> RoutingNames = Names<EdgeRouting>();
-    private static readonly Dictionary<string, EdgeRouting> Routings = RoutingNames.ToDictionary(p => p.Value, p => p.Key);
-    private static readonly Dictionary<EdgeCorner, string> CornerNames = Names<EdgeCorner>();
-    private static readonly Dictionary<string, EdgeCorner> Corners = CornerNames.ToDictionary(p => p.Value, p => p.Key);
+    private static readonly Dictionary<ShapeKind, string> KindNames = JsonNames<ShapeKind>();
+    private static readonly Dictionary<string, ShapeKind> KindsByName = KindNames.ToDictionary(p => p.Value, p => p.Key);
+    private static readonly Dictionary<EdgeRouting, string> RoutingNames = JsonNames<EdgeRouting>();
+    private static readonly Dictionary<string, EdgeRouting> RoutingsByName = RoutingNames.ToDictionary(p => p.Value, p => p.Key);
+    private static readonly Dictionary<EdgeCorner, string> CornerNames = JsonNames<EdgeCorner>();
+    private static readonly Dictionary<string, EdgeCorner> CornersByName = CornerNames.ToDictionary(p => p.Value, p => p.Key);
 
     public static string Format(Shape shape, bool withKind = false) =>
-        string.Create(CultureInfo.InvariantCulture, $"{Keyword} {shape.Id} x={shape.X} y={shape.Y} width={shape.Width} height={shape.Height}")
+        string.Create(CultureInfo.InvariantCulture, $"{ShapeKeyword} {shape.Id} x={shape.X} y={shape.Y} width={shape.Width} height={shape.Height}")
         + (withKind ? $" kind={KindNames[shape.Kind]}" : "");
 
     public static string Format(Edge edge) =>
@@ -36,57 +36,74 @@ internal static partial class LayoutComment
 
     /// <summary>Does the edge need an edge comment: angled among other routings, or attached to fixed diamond corners?</summary>
     public static bool Needed(Edge edge, bool allAngled) =>
-        (!allAngled && edge.Routing == EdgeRouting.Angled) || edge.SourceCorner != EdgeCorner.Auto || edge.TargetCorner != EdgeCorner.Auto;
+        (!allAngled && edge.Routing == EdgeRouting.Angled) || edge.HasFixedCorner();
 
     /// <summary>Reads the text of a comment; other comments are ignored.</summary>
     public static void Read(string comment, int line, ParsedDiagramBuilder builder)
     {
         if (comment.StartsWith(EdgeKeyword, StringComparison.Ordinal))
         {
-            var edge = EdgePattern().Match(comment);
-            if (!edge.Success || !Routings.TryGetValue(edge.Groups["routing"].Value, out var routing))
-            {
-                throw ParsedDiagramBuilder.Error(line, $"invalid edge comment, expected '{EdgeKeyword} <source> <target> routing=straight|angled'.");
-            }
-            EdgeCorner Corner(string name)
-            {
-                var group = edge.Groups[name];
-                if (!group.Success)
-                {
-                    return EdgeCorner.Auto;
-                }
-                return Corners.TryGetValue(group.Value, out var corner)
-                    ? corner
-                    : throw ParsedDiagramBuilder.Error(line, $"unknown edge corner '{group.Value}', expected top, right, bottom, left or auto.");
-            }
-            builder.SetEdgeRouting(line, edge.Groups["source"].Value, edge.Groups["target"].Value, routing, Corner("from"), Corner("to"));
-            return;
+            ReadEdgeComment(comment, line, builder);
         }
-        if (!comment.StartsWith(Keyword, StringComparison.Ordinal))
+        else if (comment.StartsWith(ShapeKeyword, StringComparison.Ordinal))
         {
-            return;
+            ReadShapeComment(comment, line, builder);
         }
-        var match = Pattern().Match(comment);
-        if (!match.Success)
-        {
-            throw ParsedDiagramBuilder.Error(line, $"invalid layout comment, expected '{Keyword} <id> x=<x> y=<y> width=<width> height=<height>'.");
-        }
-        ShapeKind? kind = null;
-        if (match.Groups["kind"].Success)
-        {
-            kind = Kinds.TryGetValue(match.Groups["kind"].Value, out var k)
-                ? k
-                : throw ParsedDiagramBuilder.Error(line, $"unknown shape kind '{match.Groups["kind"].Value}'.");
-        }
-        double Value(string name) => double.Parse(match.Groups[name].Value, CultureInfo.InvariantCulture);
-        builder.SetLayout(line, match.Groups["id"].Value, new ParsedBounds(Value("x"), Value("y"), Value("width"), Value("height")), kind);
     }
 
-    private static Dictionary<T, string> Names<T>() where T : struct, Enum =>
+    private static void ReadEdgeComment(string comment, int line, ParsedDiagramBuilder builder)
+    {
+        var match = EdgePattern().Match(comment);
+        if (!match.Success || !RoutingsByName.TryGetValue(match.Groups["routing"].Value, out var routing))
+        {
+            throw ParsedDiagramBuilder.Error(line, $"invalid edge comment, expected '{EdgeKeyword} <source> <target> routing=straight|angled'.");
+        }
+        builder.SetEdgeRouting(
+            line, match.Groups["source"].Value, match.Groups["target"].Value, routing,
+            ParseCorner(match.Groups["from"], line), ParseCorner(match.Groups["to"], line));
+    }
+
+    private static void ReadShapeComment(string comment, int line, ParsedDiagramBuilder builder)
+    {
+        var match = ShapePattern().Match(comment);
+        if (!match.Success)
+        {
+            throw ParsedDiagramBuilder.Error(line, $"invalid layout comment, expected '{ShapeKeyword} <id> x=<x> y=<y> width=<width> height=<height>'.");
+        }
+        var kind = ParseKind(match.Groups["kind"], line);
+        double Number(string name) => double.Parse(match.Groups[name].Value, CultureInfo.InvariantCulture);
+        var bounds = new ParsedBounds(Number("x"), Number("y"), Number("width"), Number("height"));
+        builder.SetLayout(line, match.Groups["id"].Value, bounds, kind);
+    }
+
+    private static EdgeCorner ParseCorner(Group corner, int line)
+    {
+        if (!corner.Success)
+        {
+            return EdgeCorner.Auto;
+        }
+        return CornersByName.TryGetValue(corner.Value, out var value)
+            ? value
+            : throw ParsedDiagramBuilder.Error(line, $"unknown edge corner '{corner.Value}', expected top, right, bottom, left or auto.");
+    }
+
+    private static ShapeKind? ParseKind(Group kind, int line)
+    {
+        if (!kind.Success)
+        {
+            return null;
+        }
+        return KindsByName.TryGetValue(kind.Value, out var value)
+            ? value
+            : throw ParsedDiagramBuilder.Error(line, $"unknown shape kind '{kind.Value}'.");
+    }
+
+    // The names in comments are the JSON names of the API, so that both stay in sync.
+    private static Dictionary<T, string> JsonNames<T>() where T : struct, Enum =>
         Enum.GetValues<T>().ToDictionary(v => v, v => typeof(T).GetField(v.ToString())!.GetCustomAttribute<JsonStringEnumMemberNameAttribute>()!.Name);
 
     [GeneratedRegex(@"^kandinsky:layout\s+(?<id>\w+)\s+x=(?<x>-?\d+(?:\.\d+)?)\s+y=(?<y>-?\d+(?:\.\d+)?)\s+width=(?<width>\d+(?:\.\d+)?)\s+height=(?<height>\d+(?:\.\d+)?)(?:\s+kind=(?<kind>[\w-]+))?$")]
-    private static partial Regex Pattern();
+    private static partial Regex ShapePattern();
 
     [GeneratedRegex(@"^kandinsky:edge\s+(?<source>\w+)\s+(?<target>\w+)\s+routing=(?<routing>\w+)(?:\s+from=(?<from>\w+))?(?:\s+to=(?<to>\w+))?$")]
     private static partial Regex EdgePattern();

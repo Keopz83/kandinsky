@@ -19,7 +19,7 @@ public static class DiagramGroups
         // A shape can only belong to a group ordered before it, so membership never forms a cycle.
         var rank = shapes
             .Select((s, i) => (s, i))
-            .OrderByDescending(p => Area(p.s))
+            .OrderByDescending(p => p.s.Area())
             .ThenBy(p => p.i)
             .Select((p, r) => (p.s.Id, r))
             .ToDictionary(p => p.Id, p => p.r);
@@ -27,7 +27,7 @@ public static class DiagramGroups
 
         return shapes.ToDictionary(
             s => s.Id,
-            s => groups.LastOrDefault(g => rank[g.Id] < rank[s.Id] && Contains(g, s))?.Id);
+            s => groups.LastOrDefault(g => rank[g.Id] < rank[s.Id] && g.Contains(s))?.Id);
     }
 
     /// <summary>The ids of all shapes inside the given groups, at any depth.</summary>
@@ -48,9 +48,4 @@ public static class DiagramGroups
         }
         return result;
     }
-
-    private static double Area(Shape s) => s.Width * s.Height;
-
-    private static bool Contains(Shape outer, Shape inner) =>
-        inner.X >= outer.X && inner.Y >= outer.Y && inner.X + inner.Width <= outer.X + outer.Width && inner.Y + inner.Height <= outer.Y + outer.Height;
 }
