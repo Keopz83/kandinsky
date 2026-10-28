@@ -69,4 +69,9 @@ Errors are returned as problem details (`application/problem+json`).
 ```sh
 dotnet test Kandinsky.slnx
 cd client && npm run build
+
+# end-to-end tests, one per main feature (see REQUIREMENTS.md); starts its own backend and frontend on ports 5091 / 5191
+cd client && npx playwright install chromium && npm run test:e2e
 ```
+
+`npm run test:e2e:ui` opens the Playwright UI to run and debug single tests.

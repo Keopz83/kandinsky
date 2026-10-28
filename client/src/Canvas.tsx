@@ -478,7 +478,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
       return
     }
     // Keep showing the dragged geometry until the server state has been reloaded.
-    setDrag({ ...drag, active: false })
+    const pending = { ...drag, active: false }
+    setDrag(pending)
     if (drag.copy) {
       await mutate(async (d) => {
         const copies = new Map<string, string>()
@@ -504,7 +505,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
         }
       })
     }
-    setDrag(null)
+    // A drag started meanwhile (e.g. a quick resize after a move) must not be cancelled.
+    setDrag((current) => (current === pending ? null : current))
   }
 
   function onBackgroundPointerDown(e: PointerEvent) {
