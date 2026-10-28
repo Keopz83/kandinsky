@@ -110,6 +110,142 @@ public sealed class ApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Adds_decisions_and_groups_with_their_default_label_and_size()
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+
+        var decision = await Read<Shape>(await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/shapes", new { kind = "decision", x = 0, y = 0 }), HttpStatusCode.Created);
+        var group = await Read<Shape>(await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/shapes", new { kind = "group", x = 200, y = 0 }), HttpStatusCode.Created);
+
+        Assert.Equal(new Shape(decision.Id, "Decision", 0, 0, 140, 80, ShapeKind.Decision), decision);
+        Assert.Equal(new Shape(group.Id, "Group", 200, 0, 320, 200, ShapeKind.Group), group);
+    }
+
+    [Fact]
+    public async Task Group_membership_follows_the_position()
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+        var url = $"/api/diagrams/{diagram.Id}/shapes";
+        var outer = await Read<Shape>(await client.PostAsJsonAsync(url, new { kind = "group", x = 0, y = 0, width = 600, height = 400 }), HttpStatusCode.Created);
+        var inner = await Read<Shape>(await client.PostAsJsonAsync(url, new { kind = "group", x = 20, y = 40, width = 300, height = 200 }), HttpStatusCode.Created);
+        var shape = await Read<Shape>(await client.PostAsJsonAsync(url, new { x = 40, y = 80 }), HttpStatusCode.Created);
+
+        Assert.Equal((null, outer.Id, inner.Id), (outer.ParentId, inner.ParentId, shape.ParentId));
+
+        // Partly outside the inner group: only in the outer one; moved out completely: at the top level.
+        var moved = await Read<Shape>(await client.PatchAsJsonAsync($"{url}/{shape.Id}", new { x = 250 }), HttpStatusCode.OK);
+        Assert.Equal(outer.Id, moved.ParentId);
+        moved = await Read<Shape>(await client.PatchAsJsonAsync($"{url}/{shape.Id}", new { x = 700 }), HttpStatusCode.OK);
+        Assert.Null(moved.ParentId);
+
+        // Growing a group around a shape makes the shape its member.
+        await client.PatchAsJsonAsync($"{url}/{outer.Id}", new { width = 900 });
+        Assert.Equal(outer.Id, (await client.GetFromJsonAsync<Shape>($"{url}/{shape.Id}"))!.ParentId);
+    }
+
+    [Fact]
+    public async Task Deleting_a_group_deletes_its_content_and_their_edges()
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+        var url = $"/api/diagrams/{diagram.Id}";
+        var group = await Read<Shape>(await client.PostAsJsonAsync($"{url}/shapes", new { kind = "group", x = 0, y = 0, width = 600, height = 400 }), HttpStatusCode.Created);
+        await client.PostAsJsonAsync($"{url}/shapes", new { kind = "group", x = 20, y = 40, width = 300, height = 200 });
+        var inside = await Read<Shape>(await client.PostAsJsonAsync($"{url}/shapes", new { x = 40, y = 80 }), HttpStatusCode.Created);
+        var outside = await Read<Shape>(await client.PostAsJsonAsync($"{url}/shapes", new { x = 700, y = 0 }), HttpStatusCode.Created);
+        await client.PostAsJsonAsync($"{url}/edges", new { sourceId = outside.Id, targetId = inside.Id });
+
+        var response = await client.DeleteAsync($"{url}/shapes/{group.Id}");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var loaded = await client.GetFromJsonAsync<Diagram>(url);
+        Assert.Equal([outside], loaded!.Shapes);
+        Assert.Empty(loaded.Edges);
+    }
+
+    [Fact]
+    public async Task Aligning_a_group_moves_its_content_along()
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+        var url = $"/api/diagrams/{diagram.Id}";
+        var anchor = await Read<Shape>(await client.PostAsJsonAsync($"{url}/shapes", new { x = 0, y = 500 }), HttpStatusCode.Created);
+        var group = await Read<Shape>(await client.PostAsJsonAsync($"{url}/shapes", new { kind = "group", x = 300, y = 0, width = 300, height = 200 }), HttpStatusCode.Created);
+        var inside = await Read<Shape>(await client.PostAsJsonAsync($"{url}/shapes", new { x = 320, y = 40 }), HttpStatusCode.Created);
+
+        var aligned = await Read<Diagram>(
+            await client.PostAsJsonAsync($"{url}/align", new { shapeIds = new[] { anchor.Id, group.Id }, direction = "horizontal" }),
+            HttpStatusCode.OK);
+
+        var shapes = aligned.Shapes.ToDictionary(s => s.Id);
+        Assert.Equal(430, shapes[group.Id].Y);
+        Assert.Equal(inside with { Y = 470 }, shapes[inside.Id]);
+    }
+
+    [Fact]
+    public async Task Imports_mermaid_subgraphs_without_layout_with_the_content_inside_the_groups()
+    {
+        var client = CreateClient();
+        var text = """
+            flowchart TB
+              Start --> Check{Valid?}
+              subgraph backend [Back end]
+                API --> DB[(Oracle)]
+              end
+              Check -->|yes| API
+              Check -->|no| Start
+            """;
+
+        var imported = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams/import", new { text }), HttpStatusCode.Created);
+
+        var shapes = imported.Shapes.ToDictionary(s => s.Id);
+        Assert.Equal((ShapeKind.Decision, ShapeKind.Group), (shapes["Check"].Kind, shapes["backend"].Kind));
+        Assert.Equal([null, null, null, "backend", "backend"], imported.Shapes.Select(s => s.ParentId));
+        Assert.Equal(["yes", "no"], imported.Edges.Where(e => e.SourceId == "Check").Select(e => e.Label));
+        var mermaid = await client.GetStringAsync($"/api/diagrams/{imported.Id}/export?format=mermaid");
+        Assert.Contains("subgraph backend [\"Back end\"]\n    API[\"API\"]\n    DB[(\"Oracle\")]\n  end\n", mermaid);
+        Assert.Contains("Check{\"Valid?\"}", mermaid);
+    }
+
+    [Fact]
+    public async Task Adds_flowchart_symbols_with_their_default_label_and_size()
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+        var url = $"/api/diagrams/{diagram.Id}/shapes";
+
+        var start = await Read<Shape>(await client.PostAsJsonAsync(url, new { kind = "start", x = 0, y = 0 }), HttpStatusCode.Created);
+        var io = await Read<Shape>(await client.PostAsJsonAsync(url, new { kind = "io", x = 0, y = 100 }), HttpStatusCode.Created);
+        var document = await Read<Shape>(await client.PostAsJsonAsync(url, new { kind = "document", x = 0, y = 200 }), HttpStatusCode.Created);
+
+        Assert.Equal(new Shape(start.Id, "Start", 0, 0, 40, 40, ShapeKind.Start), start);
+        Assert.Equal(new Shape(io.Id, "Input / output", 0, 100, 140, 60, ShapeKind.InputOutput), io);
+        Assert.Equal(new Shape(document.Id, "Document", 0, 200, 140, 70, ShapeKind.Document), document);
+    }
+
+    [Fact]
+    public async Task Adds_angled_edges_and_switches_the_routing()
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+        var url = $"/api/diagrams/{diagram.Id}";
+        var a = await Read<Shape>(await client.PostAsJsonAsync($"{url}/shapes", new { label = "A" }), HttpStatusCode.Created);
+        var b = await Read<Shape>(await client.PostAsJsonAsync($"{url}/shapes", new { label = "B" }), HttpStatusCode.Created);
+
+        var response = await client.PostAsJsonAsync($"{url}/edges", new { sourceId = a.Id, targetId = b.Id, routing = "angled" });
+        Assert.Contains("\"routing\":\"angled\"", await response.Content.ReadAsStringAsync());
+        var edge = await Read<Edge>(response, HttpStatusCode.Created);
+        var straight = await Read<Edge>(await client.PatchAsJsonAsync($"{url}/edges/{edge.Id}", new { routing = "straight" }), HttpStatusCode.OK);
+        var relabeled = await Read<Edge>(await client.PatchAsJsonAsync($"{url}/edges/{edge.Id}", new { label = "next" }), HttpStatusCode.OK);
+
+        Assert.Equal(EdgeRouting.Angled, edge.Routing);
+        Assert.Equal(edge with { Routing = EdgeRouting.Straight }, straight);
+        Assert.Equal(straight with { Label = "next" }, relabeled);
+    }
+
+    [Fact]
     public async Task Deleting_shape_removes_connected_edges()
     {
         var client = CreateClient();

@@ -3,6 +3,7 @@
   --accent: var(--bs-primary);
   --shape-fill: #fffdf5;
   --shape-stroke: #3a3f4b;
+  --group-fill: rgba(226, 232, 244, 0.45);
   --text: var(--bs-body-color);
 }
 
@@ -75,6 +76,11 @@ body {
 .sidebar {
   width: 210px;
   flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.palette-item.btn-sm {
+  --bs-btn-padding-y: 0.15rem;
 }
 
 .sidebar h2 {
@@ -115,6 +121,28 @@ body {
 
 .palette-item.active svg .guide {
   stroke: white;
+}
+
+.palette-item svg .filled,
+.palette-item svg path.shape-icon {
+  fill: var(--shape-fill);
+  stroke: inherit;
+}
+
+.palette-item svg .filled {
+  fill: var(--shape-stroke);
+}
+
+.palette-item.active svg .filled {
+  fill: white;
+}
+
+.palette-item svg .line-icon {
+  fill: none;
+}
+
+.palette-item svg .group-icon {
+  fill: var(--group-fill);
 }
 
 .palette-item svg path.cylinder {
@@ -199,6 +227,44 @@ body {
   pointer-events: none;
 }
 
+/* A start point is a filled circle, an end point a framed one. */
+.shape.start > .outline,
+.shape .outline-dot {
+  fill: var(--shape-stroke);
+}
+
+.shape .outline-dot {
+  pointer-events: none;
+}
+
+.shape.selected .outline-dot,
+.shape.selected.start > .outline {
+  fill: var(--accent);
+}
+
+.shape .label.below {
+  align-items: flex-start;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+/* Groups are translucent so the grid and their content's surroundings stay visible. */
+.shape.group > .outline {
+  fill: var(--group-fill);
+}
+
+.shape.group .label {
+  justify-content: flex-start;
+  padding: 4px 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.shape.group .label-input {
+  text-align: left;
+}
+
 .shape.selected .outline,
 .shape.selected .outline-detail,
 .shape.source .outline,
@@ -257,6 +323,10 @@ body {
   cursor: pointer;
 }
 
+.edge polyline {
+  fill: none;
+}
+
 .edge .hit {
   stroke: transparent;
   stroke-width: 12;
@@ -288,7 +358,19 @@ marker .arrow-selected {
   fill: var(--accent);
 }
 
+.edge-menu {
+  position: absolute;
+  --bs-dropdown-font-size: 0.875rem;
+  min-width: 170px;
+}
+
+.edge-menu .check {
+  display: inline-block;
+  width: 1.2em;
+}
+
 .preview {
+  fill: none;
   stroke: var(--accent);
   stroke-width: 1.5;
   stroke-dasharray: 4 4;

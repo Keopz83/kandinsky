@@ -308,11 +308,13 @@ export function App() {
           <Tabs diagrams={diagrams} currentId={diagramId} onSelect={(id) => void open(id)} onRename={onRename} onClose={onClose} onNew={onNew} />
           <header className="toolbar border-bottom px-3 py-2">
             <span className="hint small text-body-secondary">
-              {tool === 'edge'
-                ? 'Press on the source rectangle and drag onto the target. Repeat for more edges. Esc returns to selection.'
-                : tool === 'rectangle' || tool === 'database'
+              {tool === 'edge' || tool === 'angled-edge'
+                ? `Press on the source shape and drag onto the target to draw ${tool === 'edge' ? 'a straight' : 'an angled'} edge. Repeat for more edges. Esc returns to selection.`
+                : tool === 'group'
+                ? 'Click on the canvas to place a group. Shapes lying fully inside a group belong to it and move with it. Esc cancels.'
+                : tool !== 'select'
                 ? `Click on the canvas to place a ${tool}. Esc cancels.`
-                : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select rectangles and edges · double-click to rename · Delete removes the selection · wheel or pinch to zoom · drag with the wheel pressed or two fingers on the trackpad to pan · Ctrl/Cmd+V pastes PlantUML / Mermaid · Ctrl/Cmd+S saves'}
+                : 'Drag to move · Shift+drag to copy · Ctrl/Cmd+click or drag a box to select rectangles and edges · double-click to rename · right-click an edge to make it straight or angled · Delete removes the selection · wheel or pinch to zoom · drag with the wheel pressed or two fingers on the trackpad to pan · Ctrl/Cmd+V pastes PlantUML / Mermaid · Ctrl/Cmd+S saves'}
             </span>
           </header>
           {diagram ? (

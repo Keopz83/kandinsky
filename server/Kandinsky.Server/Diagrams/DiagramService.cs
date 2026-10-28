@@ -8,6 +8,12 @@ public sealed class DiagramService
 {
     public const double DefaultWidth = 140;
     public const double DefaultHeight = 60;
+    public const double DecisionHeight = 80;
+    public const double GroupWidth = 320;
+    public const double GroupHeight = 200;
+    public const double PointSize = 40;
+    public const double ConnectorSize = 60;
+    public const double DocumentHeight = 70;
     private const double MinSize = 20;
     private const double MaxCoordinate = 100_000;
     private const int MaxTextLength = 200;
@@ -25,7 +31,7 @@ public sealed class DiagramService
     public DiagramService(DiagramFileStore files)
     {
         _files = files;
-        _diagrams = files.LoadAll().ToDictionary(d => d.Id);
+        _diagrams = files.LoadAll().Select(WithParents).ToDictionary(d => d.Id);
     }
 
     public IReadOnlyList<DiagramSummary> List()
@@ -98,16 +104,16 @@ public sealed class DiagramService
         lock (_lock)
         {
             var diagram = Find(diagramId);
-            var width = ValidSize(request.Width ?? DefaultWidth, "Width");
-            var height = ValidSize(request.Height ?? DefaultHeight, "Height");
+            var kind = request.Kind ?? ShapeKind.Rectangle;
+            var (defaultWidth, defaultHeight) = DefaultSize(kind);
+            var width = ValidSize(request.Width ?? defaultWidth, "Width");
+            var height = ValidSize(request.Height ?? defaultHeight, "Height");
             var (x, y) = request.X is null || request.Y is null
                 ? FreePosition(diagram, width, height)
                 : (ValidCoordinate(request.X.Value, "X"), ValidCoordinate(request.Y.Value, "Y"));
-            var kind = request.Kind ?? ShapeKind.Rectangle;
-            var label = request.Label ?? (kind == ShapeKind.Database ? "Database" : "Class");
+            var label = request.Label ?? DefaultLabel(kind);
             var shape = new Shape(NextId(diagram, "s"), ValidLabel(label), x, y, width, height, kind);
-            _diagrams[diagramId] = diagram with { Shapes = [.. diagram.Shapes, shape] };
-            return shape;
+            return FindShape(Store(diagram with { Shapes = [.. diagram.Shapes, shape] }), shape.Id);
         }
     }
 
@@ -126,8 +132,7 @@ public sealed class DiagramService
                 Height = request.Height is null ? shape.Height : ValidSize(request.Height.Value, "Height"),
                 Kind = request.Kind ?? shape.Kind,
             };
-            _diagrams[diagramId] = diagram with { Shapes = diagram.Shapes.Select(s => s.Id == shapeId ? updated : s).ToList() };
-            return updated;
+            return FindShape(Store(diagram with { Shapes = diagram.Shapes.Select(s => s.Id == shapeId ? updated : s).ToList() }), shapeId);
         }
     }
 
@@ -137,11 +142,14 @@ public sealed class DiagramService
         {
             var diagram = Find(diagramId);
             FindShape(diagram, shapeId);
-            _diagrams[diagramId] = diagram with
+            // A group is deleted with everything inside it.
+            var deleted = DiagramGroups.Descendants(diagram.Shapes, [shapeId]);
+            deleted.Add(shapeId);
+            Store(diagram with
             {
-                Shapes = diagram.Shapes.Where(s => s.Id != shapeId).ToList(),
-                Edges = diagram.Edges.Where(e => e.SourceId != shapeId && e.TargetId != shapeId).ToList(),
-            };
+                Shapes = diagram.Shapes.Where(s => !deleted.Contains(s.Id)).ToList(),
+                Edges = diagram.Edges.Where(e => !deleted.Contains(e.SourceId) && !deleted.Contains(e.TargetId)).ToList(),
+            });
         }
     }
 
@@ -159,7 +167,7 @@ public sealed class DiagramService
         {
             var diagram = Find(diagramId);
             ValidateEndpoints(diagram, request.SourceId, request.TargetId);
-            var edge = new Edge(NextId(diagram, "e"), request.SourceId, request.TargetId, ValidEdgeLabel(request.Label));
+            var edge = new Edge(NextId(diagram, "e"), request.SourceId, request.TargetId, ValidEdgeLabel(request.Label), request.Routing ?? EdgeRouting.Straight);
             _diagrams[diagramId] = diagram with { Edges = [.. diagram.Edges, edge] };
             return edge;
         }
@@ -176,6 +184,7 @@ public sealed class DiagramService
                 SourceId = request.SourceId ?? edge.SourceId,
                 TargetId = request.TargetId ?? edge.TargetId,
                 Label = request.Label is null ? edge.Label : ValidEdgeLabel(request.Label),
+                Routing = request.Routing ?? edge.Routing,
             };
             ValidateEndpoints(diagram, updated.SourceId, updated.TargetId);
             _diagrams[diagramId] = diagram with { Edges = diagram.Edges.Select(e => e.Id == edgeId ? updated : e).ToList() };
@@ -218,14 +227,30 @@ public sealed class DiagramService
 
             var anchor = diagram.Shapes.First(s => s.Id == ids[0]);
             var selected = ids.ToHashSet();
-            var shapes = diagram.Shapes
-                .Select(s => !selected.Contains(s.Id) ? s : direction == AlignDirection.Horizontal
+            var byId = diagram.Shapes.ToDictionary(s => s.Id);
+            var aligned = diagram.Shapes
+                .Where(s => selected.Contains(s.Id))
+                .ToDictionary(s => s.Id, s => direction == AlignDirection.Horizontal
                     ? s with { Y = Math.Max(0, anchor.Y + anchor.Height / 2 - s.Height / 2) }
-                    : s with { X = Math.Max(0, anchor.X + anchor.Width / 2 - s.Width / 2) })
+                    : s with { X = Math.Max(0, anchor.X + anchor.Width / 2 - s.Width / 2) });
+
+            // Shapes inside an aligned group move along with it, unless they are aligned themselves.
+            (double X, double Y)? Offset(Shape s)
+            {
+                for (var parent = s.ParentId; parent is not null; parent = byId[parent].ParentId)
+                {
+                    if (aligned.TryGetValue(parent, out var moved))
+                    {
+                        return (moved.X - byId[parent].X, moved.Y - byId[parent].Y);
+                    }
+                }
+                return null;
+            }
+
+            var shapes = diagram.Shapes
+                .Select(s => aligned.TryGetValue(s.Id, out var a) ? a : Offset(s) is { } d ? s with { X = s.X + d.X, Y = s.Y + d.Y } : s)
                 .ToList();
-            diagram = diagram with { Shapes = shapes };
-            _diagrams[diagramId] = diagram;
-            return diagram;
+            return Store(diagram with { Shapes = shapes });
         }
     }
 
@@ -234,9 +259,7 @@ public sealed class DiagramService
         lock (_lock)
         {
             var diagram = Find(diagramId);
-            diagram = diagram with { Shapes = DiagramLayout.Arrange(diagram.Shapes, diagram.Edges) };
-            _diagrams[diagramId] = diagram;
-            return diagram;
+            return Store(diagram with { Shapes = DiagramLayout.Arrange(diagram.Shapes, diagram.Edges) });
         }
     }
 
@@ -246,9 +269,8 @@ public sealed class DiagramService
         diagram = diagram with { Id = NewDiagramId(), Name = ValidName(request.Name ?? parsed.Title ?? NonBlank(request.FallbackName) ?? "Imported diagram") };
         lock (_lock)
         {
-            _diagrams[diagram.Id] = diagram;
+            return Store(diagram);
         }
-        return diagram;
     }
 
     public PasteResult Paste(string diagramId, PasteDiagramRequest request)
@@ -284,8 +306,7 @@ public sealed class DiagramService
             var edges = pasted.Edges
                 .Select(e => e with { Id = NextId(used, "e"), SourceId = ids[e.SourceId], TargetId = ids[e.TargetId] })
                 .ToList();
-            diagram = diagram with { Shapes = [.. diagram.Shapes, .. shapes], Edges = [.. diagram.Edges, .. edges] };
-            _diagrams[diagramId] = diagram;
+            diagram = Store(diagram with { Shapes = [.. diagram.Shapes, .. shapes], Edges = [.. diagram.Edges, .. edges] });
             return new PasteResult(diagram, shapes.Select(s => s.Id).ToList(), edges.Select(e => e.Id).ToList());
         }
     }
@@ -308,13 +329,16 @@ public sealed class DiagramService
 
         var used = parsed.Shapes.Select(s => s.Id).ToHashSet();
         var edges = parsed.Edges
-            .Select(e => new Edge(NextId(used, "e"), e.SourceId, e.TargetId, ValidEdgeLabel(e.Label)))
+            .Select(e => new Edge(NextId(used, "e"), e.SourceId, e.TargetId, ValidEdgeLabel(e.Label), e.Routing))
             .ToList();
         var diagram = new Diagram("", "", [], edges);
 
         if (parsed.Shapes.All(s => s.Bounds is null))
         {
-            var shapes = parsed.Shapes.Select(s => new Shape(s.Id, ValidLabel(s.Label), 0, 0, DefaultWidth, DefaultHeight, s.Kind)).ToList();
+            // Auto-layout keeps the nesting of the text; afterwards membership follows the positions as usual.
+            var shapes = parsed.Shapes
+                .Select(s => new Shape(s.Id, ValidLabel(s.Label), 0, 0, DefaultSize(s.Kind).Width, DefaultSize(s.Kind).Height, s.Kind, s.ParentId))
+                .ToList();
             diagram = diagram with { Shapes = DiagramLayout.Arrange(shapes, edges) };
         }
         else
@@ -334,14 +358,57 @@ public sealed class DiagramService
             diagram = diagram with { Shapes = [.. placed.Values] };
             foreach (var s in parsed.Shapes.Where(s => s.Bounds is null))
             {
-                var (x, y) = FreePosition(diagram, DefaultWidth, DefaultHeight);
-                placed[s.Id] = new Shape(s.Id, ValidLabel(s.Label), x, y, DefaultWidth, DefaultHeight, s.Kind);
+                var (width, height) = DefaultSize(s.Kind);
+                var (x, y) = FreePosition(diagram, width, height);
+                placed[s.Id] = new Shape(s.Id, ValidLabel(s.Label), x, y, width, height, s.Kind);
                 diagram = diagram with { Shapes = [.. placed.Values] };
             }
             diagram = diagram with { Shapes = parsed.Shapes.Select(s => placed[s.Id]).ToList() };
         }
         return (parsed, diagram);
     }
+
+    /// <summary>Registers the diagram with its group membership updated to the current positions.</summary>
+    private Diagram Store(Diagram diagram)
+    {
+        diagram = WithParents(diagram);
+        _diagrams[diagram.Id] = diagram;
+        return diagram;
+    }
+
+    private static Diagram WithParents(Diagram diagram) => diagram with { Shapes = DiagramGroups.AssignParents(diagram.Shapes) };
+
+    /// <summary>
+    /// The size of a shape added without one: decisions are taller to fit a label in the diamond, groups leave room for content,
+    /// start and end points are small circles.
+    /// </summary>
+    public static (double Width, double Height) DefaultSize(ShapeKind kind) => kind switch
+    {
+        ShapeKind.Decision => (DefaultWidth, DecisionHeight),
+        ShapeKind.Group => (GroupWidth, GroupHeight),
+        ShapeKind.Start or ShapeKind.End => (PointSize, PointSize),
+        ShapeKind.Connector => (ConnectorSize, ConnectorSize),
+        ShapeKind.Document => (DefaultWidth, DocumentHeight),
+        _ => (DefaultWidth, DefaultHeight),
+    };
+
+    public static string DefaultLabel(ShapeKind kind) => kind switch
+    {
+        ShapeKind.Database => "Database",
+        ShapeKind.Decision => "Decision",
+        ShapeKind.Group => "Group",
+        ShapeKind.Start => "Start",
+        ShapeKind.End => "End",
+        ShapeKind.Terminal => "Terminal",
+        ShapeKind.Rounded => "Event",
+        ShapeKind.InputOutput => "Input / output",
+        ShapeKind.Subroutine => "Subroutine",
+        ShapeKind.Document => "Document",
+        ShapeKind.Connector => "A",
+        ShapeKind.Preparation => "Preparation",
+        ShapeKind.Manual => "Manual operation",
+        _ => "Class",
+    };
 
     private Diagram Find(string id) =>
         _diagrams.TryGetValue(id, out var diagram) ? diagram : throw new NotFoundException($"Diagram '{id}' not found.");

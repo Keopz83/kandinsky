@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DragEvent, PointerEvent } from 'react'
+import type { DragEvent, MouseEvent as ReactMouseEvent, PointerEvent } from 'react'
 import { api } from './api'
 import { LabelInput } from './LabelInput'
-import type { Diagram, Edge, Shape, ShapeKind, Tool } from './types'
+import { DEFAULT_SIZE, ShapeOutline, boxOf, center, drawOrder, edgePath, labelBelow, labelBox, pathMidpoint, pathTouches, shapeTouches, toPoints, withContent } from './geometry'
+import type { Point } from './geometry'
+import { SHAPE_KINDS } from './types'
+import type { Diagram, Edge, EdgeRouting, Shape, ShapeKind, Tool } from './types'
 
 export const SHAPE_MIME = 'application/x-kandinsky-shape'
 
 const MIN_SIZE = 20
-const DEFAULT_WIDTH = 140
-const DEFAULT_HEIGHT = 60
 const EDGE_LABEL_WIDTH = 160
 const EDGE_LABEL_HEIGHT = 28
 const MIN_ZOOM = 0.25
@@ -38,12 +39,14 @@ interface Drag {
   active: boolean
 }
 
-const unchanged = (a: Shape, b: Shape) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
-
-interface Point {
+/** The right-click menu of an edge, at a position within the canvas. */
+interface EdgeMenu {
+  edgeId: string
   x: number
   y: number
 }
+
+const unchanged = (a: Shape, b: Shape) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
 
 /** The visible part of the whiteboard: screen position of the diagram origin and the zoom factor. */
 interface View {
@@ -94,102 +97,10 @@ interface Props {
   mutate: Mutate
 }
 
-/** Height of the elliptical top (and bottom) of a database cylinder. */
-const capHeight = (s: Shape) => (s.kind === 'database' ? Math.min(12, s.height / 4, s.width / 4) : 0)
-
-interface OutlineProps {
-  shape: Shape
-  onPointerDown?: (e: PointerEvent<SVGElement>) => void
-  onDoubleClick?: () => void
-}
-
-/** The shape's outline: a rectangle, or a cylinder with the front edge of its top drawn separately. */
-function ShapeOutline({ shape, ...events }: OutlineProps) {
-  const { x, y, width: w, height: h } = shape
-  if (shape.kind !== 'database') {
-    return <rect className="outline" x={x} y={y} width={w} height={h} rx={4} {...events} />
-  }
-  const rx = w / 2
-  const ry = capHeight(shape) / 2
-  return (
-    <>
-      <path
-        className="outline"
-        d={`M${x},${y + ry} A${rx},${ry} 0 0 1 ${x + w},${y + ry} V${y + h - ry} A${rx},${ry} 0 0 1 ${x},${y + h - ry} Z`}
-        {...events}
-      />
-      <path className="outline-detail" d={`M${x},${y + ry} A${rx},${ry} 0 0 0 ${x + w},${y + ry}`} />
-    </>
-  )
-}
-
-/** The label area: below the top of a database cylinder. */
-const labelBox = (s: Shape) => {
-  const top = capHeight(s)
-  return { x: s.x, y: s.y + top, width: s.width, height: Math.max(0, s.height - top) }
-}
-
-const center = (s: Shape): Point => ({ x: s.x + s.width / 2, y: s.y + s.height / 2 })
-
 const midpoint = (points: Point[]): Point => ({
   x: points.reduce((sum, p) => sum + p.x, 0) / points.length,
   y: points.reduce((sum, p) => sum + p.y, 0) / points.length,
 })
-
-const boxOf = (a: Point, b: Point) => ({
-  x: Math.min(a.x, b.x),
-  y: Math.min(a.y, b.y),
-  width: Math.abs(a.x - b.x),
-  height: Math.abs(a.y - b.y),
-})
-
-function borderPoint(s: Shape, toward: Point): Point {
-  const c = center(s)
-  const dx = toward.x - c.x
-  const dy = toward.y - c.y
-  if (dx === 0 && dy === 0) {
-    return c
-  }
-  const scale = Math.min(s.width / 2 / Math.abs(dx), s.height / 2 / Math.abs(dy))
-  return { x: c.x + dx * scale, y: c.y + dy * scale }
-}
-
-function edgeEnds(from: Shape, to: Shape) {
-  return { start: borderPoint(from, center(to)), end: borderPoint(to, center(from)) }
-}
-
-type Box = ReturnType<typeof boxOf>
-
-const shapeTouches = (s: Shape, box: Box) =>
-  s.x <= box.x + box.width && s.x + s.width >= box.x && s.y <= box.y + box.height && s.y + s.height >= box.y
-
-// Liang–Barsky clipping: does the segment a→b touch the box?
-function segmentTouches(a: Point, b: Point, box: Box) {
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  let t0 = 0
-  let t1 = 1
-  for (const [p, q] of [
-    [-dx, a.x - box.x],
-    [dx, box.x + box.width - a.x],
-    [-dy, a.y - box.y],
-    [dy, box.y + box.height - a.y],
-  ]) {
-    if (p === 0) {
-      if (q < 0) {
-        return false
-      }
-    } else if (p < 0) {
-      t0 = Math.max(t0, q / p)
-    } else {
-      t1 = Math.min(t1, q / p)
-    }
-    if (t0 > t1) {
-      return false
-    }
-  }
-  return true
-}
 
 export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
@@ -203,14 +114,19 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   const [marquee, setMarquee] = useState<Marquee | null>(null)
   const [edgeSource, setEdgeSource] = useState<string | null>(null)
   const [pointer, setPointer] = useState<Point | null>(null)
+  const [menu, setMenu] = useState<EdgeMenu | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   // Last mouse position over the whiteboard (client coordinates), where pasted diagrams are centered.
   const hover = useRef<{ clientX: number; clientY: number } | null>(null)
 
   const dragged = new Map(drag && !drag.copy ? drag.currents.map((s) => [s.id, s]) : [])
   const shapes = diagram.shapes.map((s) => dragged.get(s.id) ?? s)
+  const ordered = drawOrder(shapes)
   const byId = new Map(shapes.map((s) => [s.id, s]))
-  const source = tool === 'edge' && edgeSource ? byId.get(edgeSource) : undefined
-  const placing = tool === 'rectangle' || tool === 'database' ? tool : null
+  const connecting = tool === 'edge' || tool === 'angled-edge'
+  const routing: EdgeRouting = tool === 'angled-edge' ? 'angled' : 'straight'
+  const source = connecting && edgeSource ? byId.get(edgeSource) : undefined
+  const placing = tool !== 'select' && !connecting ? tool : null
   const selectedShapes = selected.filter((id) => byId.has(id))
   const selectedEdges = diagram.edges.filter((edge) => selected.includes(edge.id))
 
@@ -220,6 +136,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
         return
       }
       if (e.key === 'Escape') {
+        setMenu(null)
         setEdgeSource(null)
         onSelect([])
         onToolDone()
@@ -233,7 +150,10 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
           for (const edge of diagram.edges.filter((edge) => ids.includes(edge.id))) {
             await api.deleteEdge(d, edge.id)
           }
-          for (const shape of diagram.shapes.filter((shape) => ids.includes(shape.id))) {
+          // A group is deleted with its content, so shapes inside a deleted group are already gone.
+          const groups = diagram.shapes.filter((shape) => shape.kind === 'group' && ids.includes(shape.id)).map((shape) => shape.id)
+          const content = withContent(diagram.shapes, groups)
+          for (const shape of diagram.shapes.filter((shape) => ids.includes(shape.id) && !(shape.parentId && content.has(shape.parentId)))) {
             await api.deleteShape(d, shape.id)
           }
         })
@@ -242,6 +162,41 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [diagram, selected, onSelect, mutate, onToolDone])
+
+  // The edge menu closes on any press outside it and when the whiteboard is zoomed or panned.
+  useEffect(() => {
+    if (!menu) {
+      return
+    }
+    const close = (e: Event) => {
+      if (!(e.target instanceof Node && menuRef.current?.contains(e.target))) {
+        setMenu(null)
+      }
+    }
+    window.addEventListener('pointerdown', close, true)
+    window.addEventListener('wheel', close, true)
+    return () => {
+      window.removeEventListener('pointerdown', close, true)
+      window.removeEventListener('wheel', close, true)
+    }
+  }, [menu])
+
+  /** Right-click on an edge selects it and opens its menu (Ctrl+click on macOS keeps toggling the selection). */
+  function openEdgeMenu(e: ReactMouseEvent, edgeId: string) {
+    if (e.ctrlKey) {
+      return
+    }
+    e.preventDefault()
+    e.stopPropagation()
+    const rect = svgRef.current!.getBoundingClientRect()
+    onSelect([edgeId])
+    setMenu({ edgeId, x: e.clientX - rect.left, y: e.clientY - rect.top })
+  }
+
+  function setRouting(edgeId: string, routing: EdgeRouting) {
+    setMenu(null)
+    void mutate((d) => api.updateEdge(d, edgeId, { routing }))
+  }
 
   // Ctrl/Cmd+V pastes PlantUML or Mermaid text from the clipboard, centered on the mouse or else the visible area.
   function onPaste(e: ClipboardEvent) {
@@ -375,7 +330,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
 
   /** The topmost shape containing the point, if any. */
   function shapeAt(p: Point) {
-    return [...shapes].reverse().find((s) => p.x >= s.x && p.x <= s.x + s.width && p.y >= s.y && p.y <= s.y + s.height)
+    return [...ordered].reverse().find((s) => p.x >= s.x && p.x <= s.x + s.width && p.y >= s.y && p.y <= s.y + s.height)
   }
 
   /** Finishes dragging an edge: releasing on another shape connects it, anywhere else cancels. */
@@ -388,14 +343,15 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     setPointer(null)
     const target = p && shapeAt(p)
     if (target && target.id !== sourceId) {
-      void mutate((d) => api.addEdge(d, sourceId, target.id))
+      void mutate((d) => api.addEdge(d, sourceId, target.id, routing))
     }
   }
 
-  // The shapes a move carries along: the selected ones plus the endpoints of selected edges.
+  // The shapes a move carries along: the selected ones, the endpoints of selected edges and the content of these groups.
   function shapesToMove(ids: string[]) {
-    const endpoints = new Set(diagram.edges.filter((edge) => ids.includes(edge.id)).flatMap((edge) => [edge.sourceId, edge.targetId]))
-    return shapes.filter((s) => ids.includes(s.id) || endpoints.has(s.id))
+    const endpoints = diagram.edges.filter((edge) => ids.includes(edge.id)).flatMap((edge) => [edge.sourceId, edge.targetId])
+    const moved = withContent(shapes, [...ids.filter((id) => byId.has(id)), ...endpoints])
+    return shapes.filter((s) => moved.has(s.id))
   }
 
   /** Starts moving (or resizing) on a shape or edge; `id` is the grabbed object. */
@@ -404,7 +360,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     if (e.button !== 0) {
       return
     }
-    if (tool === 'edge') {
+    if (connecting) {
       if (byId.has(id)) {
         setEdgeSource(id)
         setPointer(toPoint(e))
@@ -478,7 +434,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
         }
         const edgeIds: string[] = []
         for (const edge of drag.edges) {
-          const copy = await api.addEdge(d, copies.get(edge.sourceId)!, copies.get(edge.targetId)!, edge.label)
+          const copy = await api.addEdge(d, copies.get(edge.sourceId)!, copies.get(edge.targetId)!, edge.routing, edge.label)
           edgeIds.push(copy.id)
         }
         // Endpoints copied only to carry an edge along weren't selected, so they don't become selected either.
@@ -532,8 +488,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
           if (!from || !to) {
             return false
           }
-          const { start, end } = edgeEnds(from, to)
-          return segmentTouches(start, end, box)
+          return pathTouches(edgePath(from, to, edge.routing), box)
         })
         .map((edge) => edge.id),
     ]
@@ -558,11 +513,12 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   /** Adds a shape centered on the given client position and selects it. */
   function placeShape(e: { clientX: number; clientY: number }, kind: ShapeKind) {
     const p = toPoint(e)
-    const x = Math.max(0, Math.round(p.x - DEFAULT_WIDTH / 2))
-    const y = Math.max(0, Math.round(p.y - DEFAULT_HEIGHT / 2))
+    const { width, height } = DEFAULT_SIZE[kind]
+    const x = Math.max(0, Math.round(p.x - width / 2))
+    const y = Math.max(0, Math.round(p.y - height / 2))
     onToolDone()
     void mutate(async (d) => {
-      const shape = await api.addShape(d, { kind, x, y })
+      const shape = await api.addShape(d, { kind, x, y, width, height })
       onSelect([shape.id])
     })
   }
@@ -572,7 +528,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
       return
     }
     e.preventDefault()
-    placeShape(e, e.dataTransfer.getData(SHAPE_MIME) === 'database' ? 'database' : 'rectangle')
+    const kind = e.dataTransfer.getData(SHAPE_MIME) as ShapeKind
+    placeShape(e, SHAPE_KINDS.includes(kind) ? kind : 'rectangle')
   }
 
   const stopEditing = () => setEditing(null)
@@ -582,9 +539,52 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
 
   const grid = GRID * view.zoom
 
+  function renderShape(shape: Shape) {
+    const isSelected = selected.includes(shape.id)
+    // The first selected shape is the align anchor.
+    const isAnchor = selectedShapes.length > 1 && selectedShapes[0] === shape.id
+    const isEditing = editing?.kind === 'shape' && editing.id === shape.id
+    return (
+      <g
+        key={shape.id}
+        className={`shape ${shape.kind} ${isSelected ? 'selected' : ''} ${isAnchor ? 'anchor' : ''} ${source?.id === shape.id || dropTarget?.id === shape.id ? 'source' : ''}`}
+      >
+        <ShapeOutline
+          shape={shape}
+          onPointerDown={(e) => startDrag(e, shape.id, 'move')}
+          onDoubleClick={() => setEditing({ kind: 'shape', id: shape.id })}
+        />
+        <foreignObject {...labelBox(shape)} pointerEvents={isEditing ? undefined : 'none'}>
+          {isEditing ? (
+            <LabelInput
+              className="label-input"
+              ariaLabel="Shape label"
+              autoFocus
+              value={shape.label}
+              onCommit={(label) => label.trim() && void mutate((d) => api.updateShape(d, shape.id, { label }))}
+              onDone={stopEditing}
+            />
+          ) : (
+            <div className={`label ${labelBelow(shape) ? 'below' : ''}`}>{shape.label}</div>
+          )}
+        </foreignObject>
+        {isSelected && selected.length === 1 && tool === 'select' && (
+          <rect
+            className="handle"
+            x={shape.x + shape.width - 5}
+            y={shape.y + shape.height - 5}
+            width={10}
+            height={10}
+            onPointerDown={(e) => startDrag(e, shape.id, 'resize')}
+          />
+        )}
+      </g>
+    )
+  }
+
   return (
     <div
-      className={`canvas ${tool === 'edge' ? 'connecting' : ''} ${placing ? 'placing' : ''} ${pan || touchPan ? 'panning' : ''}`}
+      className={`canvas ${connecting ? 'connecting' : ''} ${placing ? 'placing' : ''} ${pan || touchPan ? 'panning' : ''}`}
       onPointerDownCapture={onPanStart}
       onPointerMoveCapture={onPanMove}
       onPointerUpCapture={onPanEnd}
@@ -613,6 +613,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
           ))}
         </defs>
         <g transform={`translate(${view.x} ${view.y}) scale(${view.zoom})`}>
+          {ordered.filter((shape) => shape.kind === 'group').map(renderShape)}
 
           {diagram.edges.map((edge) => {
             const from = byId.get(edge.sourceId)
@@ -620,8 +621,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
             if (!from || !to) {
               return null
             }
-            const { start, end } = edgeEnds(from, to)
-            const middle = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
+            const path = edgePath(from, to, edge.routing)
+            const middle = pathMidpoint(path)
             const selected = selectedEdges.includes(edge)
             const isEditing = editing?.kind === 'edge' && editing.id === edge.id
             return (
@@ -630,16 +631,10 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
                 className={`edge ${selected ? 'selected' : ''}`}
                 onPointerDown={(e) => startDrag(e, edge.id, 'move')}
                 onDoubleClick={() => setEditing({ kind: 'edge', id: edge.id })}
+                onContextMenu={(e) => openEdgeMenu(e, edge.id)}
               >
-                <line className="hit" x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
-                <line
-                  className="line"
-                  x1={start.x}
-                  y1={start.y}
-                  x2={end.x}
-                  y2={end.y}
-                  markerEnd={`url(#${selected ? 'arrow-selected' : 'arrow'})`}
-                />
+                <polyline className="hit" points={toPoints(path)} />
+                <polyline className="line" points={toPoints(path)} markerEnd={`url(#${selected ? 'arrow-selected' : 'arrow'})`} />
                 {isEditing ? (
                   <foreignObject
                     x={middle.x - EDGE_LABEL_WIDTH / 2}
@@ -667,58 +662,37 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
             )
           })}
 
-          {shapes.map((shape) => {
-            const isSelected = selected.includes(shape.id)
-            // The first selected shape is the align anchor.
-            const isAnchor = selectedShapes.length > 1 && selectedShapes[0] === shape.id
-            const isEditing = editing?.kind === 'shape' && editing.id === shape.id
-            return (
-              <g
-                key={shape.id}
-                className={`shape ${isSelected ? 'selected' : ''} ${isAnchor ? 'anchor' : ''} ${source?.id === shape.id || dropTarget?.id === shape.id ? 'source' : ''}`}
-              >
-                <ShapeOutline
-                  shape={shape}
-                  onPointerDown={(e) => startDrag(e, shape.id, 'move')}
-                  onDoubleClick={() => setEditing({ kind: 'shape', id: shape.id })}
-                />
-                <foreignObject {...labelBox(shape)} pointerEvents={isEditing ? undefined : 'none'}>
-                  {isEditing ? (
-                    <LabelInput
-                      className="label-input"
-                      ariaLabel="Shape label"
-                      autoFocus
-                      value={shape.label}
-                      onCommit={(label) => label.trim() && void mutate((d) => api.updateShape(d, shape.id, { label }))}
-                      onDone={stopEditing}
-                    />
-                  ) : (
-                    <div className="label">{shape.label}</div>
-                  )}
-                </foreignObject>
-                {isSelected && selected.length === 1 && tool === 'select' && (
-                  <rect
-                    className="handle"
-                    x={shape.x + shape.width - 5}
-                    y={shape.y + shape.height - 5}
-                    width={10}
-                    height={10}
-                    onPointerDown={(e) => startDrag(e, shape.id, 'resize')}
-                  />
-                )}
-              </g>
-            )
-          })}
+          {ordered.filter((shape) => shape.kind !== 'group').map(renderShape)}
 
           {drag?.copy && <CopyGhosts drag={drag} />}
 
           {marquee && <rect className="marquee" {...boxOf(marquee.start, marquee.current)} />}
 
           {source && pointer && (
-            <line className="preview" x1={center(source).x} y1={center(source).y} x2={pointer.x} y2={pointer.y} />
+            <polyline
+              className="preview"
+              points={toPoints(
+                routing === 'angled'
+                  ? edgePath(source, { id: '', kind: 'rectangle', label: '', x: pointer.x, y: pointer.y, width: 0, height: 0 }, 'angled')
+                  : [center(source), pointer],
+              )}
+            />
           )}
         </g>
       </svg>
+      {menu && (
+        <div ref={menuRef} className="dropdown-menu show edge-menu" style={{ left: menu.x, top: menu.y }} role="menu">
+          {(['straight', 'angled'] as const).map((r) => {
+            const current = diagram.edges.find((edge) => edge.id === menu.edgeId)?.routing === r
+            return (
+              <button key={r} type="button" role="menuitemradio" aria-checked={current} className="dropdown-item" onClick={() => setRouting(menu.edgeId, r)}>
+                <span className="check">{current ? '✓' : ''}</span>
+                {r === 'straight' ? 'Straight edge' : 'Angled edge'}
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -728,18 +702,18 @@ function CopyGhosts({ drag }: { drag: Drag }) {
   return (
     <g pointerEvents="none">
       {drag.edges.map((edge) => {
-        const { start, end } = edgeEnds(byId.get(edge.sourceId)!, byId.get(edge.targetId)!)
+        const path = edgePath(byId.get(edge.sourceId)!, byId.get(edge.targetId)!, edge.routing)
         return (
           <g key={edge.id} className="edge ghost">
-            <line className="line" x1={start.x} y1={start.y} x2={end.x} y2={end.y} markerEnd="url(#arrow)" />
+            <polyline className="line" points={toPoints(path)} markerEnd="url(#arrow)" />
           </g>
         )
       })}
-      {drag.currents.map((c) => (
-        <g key={c.id} className="shape ghost">
+      {drawOrder(drag.currents).map((c) => (
+        <g key={c.id} className={`shape ${c.kind} ghost`}>
           <ShapeOutline shape={c} />
           <foreignObject {...labelBox(c)}>
-            <div className="label">{c.label}</div>
+            <div className={`label ${labelBelow(c) ? 'below' : ''}`}>{c.label}</div>
           </foreignObject>
         </g>
       ))}

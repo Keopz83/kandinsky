@@ -1,4 +1,4 @@
-import type { AlignDirection, Diagram, DiagramSummary, Edge, Format, PasteResult, Shape } from './types'
+import type { AlignDirection, Diagram, DiagramSummary, Edge, EdgeRouting, Format, PasteResult, Shape } from './types'
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(`/api/diagrams${path}`, {
@@ -39,9 +39,9 @@ export const api = {
     request<Shape>('PATCH', at(id, 'shapes', shapeId), patch),
   deleteShape: (id: string, shapeId: string) => request<void>('DELETE', at(id, 'shapes', shapeId)),
 
-  addEdge: (id: string, sourceId: string, targetId: string, label?: string | null) =>
-    request<Edge>('POST', at(id, 'edges'), { sourceId, targetId, label }),
-  updateEdge: (id: string, edgeId: string, patch: { label?: string }) =>
+  addEdge: (id: string, sourceId: string, targetId: string, routing: EdgeRouting, label?: string | null) =>
+    request<Edge>('POST', at(id, 'edges'), { sourceId, targetId, routing, label }),
+  updateEdge: (id: string, edgeId: string, patch: { label?: string; routing?: EdgeRouting }) =>
     request<Edge>('PATCH', at(id, 'edges', edgeId), patch),
   deleteEdge: (id: string, edgeId: string) => request<void>('DELETE', at(id, 'edges', edgeId)),
 }

@@ -6,24 +6,109 @@ using Kandinsky.Server.Model;
 namespace Kandinsky.Server.Formats;
 
 /// <summary>
-/// Mermaid subset: classDiagram with classes, optional labels and directed associations;
-/// flowchart with nodes (database nodes <c>[(text)]</c> become databases, any other shape a rectangle) and directed links.
+/// Mermaid subset: classDiagram with classes, namespaces (as groups), optional labels and directed associations;
+/// flowchart with nodes in the classic syntax (<c>[(text)]</c>, <c>{text}</c>, <c>([text])</c>, …) or the v11 shape syntax
+/// (<c>A@{ shape: doc, label: "text" }</c>), subgraphs (as groups) and directed links.
 /// </summary>
 public static partial class Mermaid
 {
-    /// <summary>Exports a class diagram, or a flowchart when the diagram has databases, which class diagrams cannot express.</summary>
+    /// <summary>
+    /// Exports a class diagram, or a flowchart when the diagram has shapes other than rectangles or angled edges,
+    /// which class diagrams cannot express.
+    /// </summary>
     public static string Export(Diagram diagram) =>
-        diagram.Shapes.Any(s => s.Kind == ShapeKind.Database) ? ExportFlowchart(diagram) : ExportClassDiagram(diagram);
+        diagram.Shapes.Any(s => s.Kind != ShapeKind.Rectangle) || diagram.Edges.Any(e => e.Routing == EdgeRouting.Angled)
+            ? ExportFlowchart(diagram)
+            : ExportClassDiagram(diagram);
+
+    /// <summary>The classic node syntax of a kind, or null for kinds that need the v11 shape syntax.</summary>
+    private static (string Open, string Close)? ClassicShape(ShapeKind kind) => kind switch
+    {
+        ShapeKind.Rectangle => ("[", "]"),
+        ShapeKind.Database => ("[(", ")]"),
+        ShapeKind.Decision => ("{", "}"),
+        ShapeKind.Rounded => ("(", ")"),
+        ShapeKind.Terminal => ("([", "])"),
+        ShapeKind.Subroutine => ("[[", "]]"),
+        ShapeKind.Connector => ("((", "))"),
+        ShapeKind.Preparation => ("{{", "}}"),
+        ShapeKind.InputOutput => ("[/", "/]"),
+        ShapeKind.Manual => ("[\\", "/]"),
+        _ => null,
+    };
+
+    private static string V11Shape(ShapeKind kind) => kind switch
+    {
+        ShapeKind.Start => "sm-circ",
+        ShapeKind.End => "fr-circ",
+        ShapeKind.Document => "doc",
+        _ => "rect",
+    };
+
+    /// <summary>Kinds of the classic node syntax by opening and closing bracket; other combinations are rectangles.</summary>
+    private static ShapeKind ClassicKind(string open, string close) => (open, close) switch
+    {
+        ("[(", _) => ShapeKind.Database,
+        ("{", _) => ShapeKind.Decision,
+        ("(", _) => ShapeKind.Rounded,
+        ("([", _) => ShapeKind.Terminal,
+        ("[[", _) => ShapeKind.Subroutine,
+        ("((", _) => ShapeKind.Connector,
+        ("(((", _) => ShapeKind.End,
+        ("{{", _) => ShapeKind.Preparation,
+        ("[/", "/]") or ("[\\", "\\]") => ShapeKind.InputOutput,
+        ("[\\", "/]") => ShapeKind.Manual,
+        _ => ShapeKind.Rectangle,
+    };
+
+    /// <summary>Kinds of the v11 shape names and aliases; other shapes are rectangles.</summary>
+    private static ShapeKind V11Kind(string shape) => shape switch
+    {
+        "rounded" or "event" => ShapeKind.Rounded,
+        "stadium" or "pill" or "terminal" => ShapeKind.Terminal,
+        "fr-rect" or "framed-rectangle" or "subproc" or "subprocess" or "subroutine" => ShapeKind.Subroutine,
+        "cyl" or "cylinder" or "database" or "db" => ShapeKind.Database,
+        "circle" or "circ" => ShapeKind.Connector,
+        "sm-circ" or "small-circle" or "start" or "f-circ" or "filled-circle" or "junction" => ShapeKind.Start,
+        "fr-circ" or "framed-circle" or "stop" or "dbl-circ" or "double-circle" => ShapeKind.End,
+        "diam" or "decision" or "diamond" or "question" => ShapeKind.Decision,
+        "hex" or "hexagon" or "prepare" => ShapeKind.Preparation,
+        "lean-r" or "lean-right" or "in-out" or "lean-l" or "lean-left" or "out-in" => ShapeKind.InputOutput,
+        "trap-t" or "inv-trapezoid" or "manual" or "trapezoid-top" => ShapeKind.Manual,
+        "doc" or "document" => ShapeKind.Document,
+        _ => ShapeKind.Rectangle,
+    };
 
     private static string ExportFlowchart(Diagram diagram)
     {
         var text = new StringBuilder();
-        text.Append("flowchart TB\n");
-        foreach (var shape in diagram.Shapes)
+        // Mermaid can only draw all links as steps; with mixed routing the angled edges are listed in comments.
+        var allAngled = diagram.Edges.Count > 0 && diagram.Edges.All(e => e.Routing == EdgeRouting.Angled);
+        if (allAngled)
         {
-            var (open, close) = shape.Kind == ShapeKind.Database ? ("[(", ")]") : ("[", "]");
-            text.Append($"  {shape.Id}{open}\"{shape.Label.Replace('"', '\'')}\"{close}\n");
+            text.Append("%%{init: {\"flowchart\": {\"curve\": \"step\"}}}%%\n");
         }
+        text.Append("flowchart TB\n");
+        var parents = DiagramGroups.Parents(diagram.Shapes);
+        var children = diagram.Shapes.ToLookup(s => parents[s.Id] ?? "");
+        void AppendShapes(string parentId, string indent)
+        {
+            foreach (var shape in children[parentId])
+            {
+                var label = shape.Label.Replace('"', '\'');
+                if (shape.Kind == ShapeKind.Group)
+                {
+                    text.Append($"{indent}subgraph {shape.Id} [\"{label}\"]\n");
+                    AppendShapes(shape.Id, indent + "  ");
+                    text.Append($"{indent}end\n");
+                    continue;
+                }
+                text.Append(ClassicShape(shape.Kind) is (var open, var close)
+                    ? $"{indent}{shape.Id}{open}\"{label}\"{close}\n"
+                    : $"{indent}{shape.Id}@{{ shape: {V11Shape(shape.Kind)}, label: \"{label}\" }}\n");
+            }
+        }
+        AppendShapes("", "  ");
         foreach (var edge in diagram.Edges)
         {
             text.Append($"  {edge.SourceId} -->");
@@ -34,6 +119,10 @@ public static partial class Mermaid
             text.Append($" {edge.TargetId}\n");
         }
         AppendLayout(text, diagram);
+        foreach (var edge in diagram.Edges.Where(e => !allAngled && e.Routing == EdgeRouting.Angled))
+        {
+            text.Append("  %% ").Append(LayoutComment.Format(edge)).Append('\n');
+        }
         return text.ToString();
     }
 
@@ -68,7 +157,7 @@ public static partial class Mermaid
 
     public static ParsedDiagram Parse(string text)
     {
-        var builder = new ParsedDiagramBuilder();
+        var builder = new ParsedDiagramBuilder(text, laterGroupsAdopt: true);
         var lines = text.Split('\n');
         var i = SkipFrontMatter(lines, builder);
         var started = false;
@@ -83,7 +172,7 @@ public static partial class Mermaid
             }
             if (line.StartsWith("%%", StringComparison.Ordinal))
             {
-                LayoutComment.Read(line[2..].Trim(), number, builder);
+                ReadComment(line, number, builder);
                 continue;
             }
             if (!started)
@@ -103,8 +192,20 @@ public static partial class Mermaid
             {
                 continue;
             }
+            if (line == "}")
+            {
+                builder.EndGroup(number, "}");
+                continue;
+            }
 
-            var match = ClassPattern().Match(line);
+            var match = NamespacePattern().Match(line);
+            if (match.Success)
+            {
+                builder.BeginGroup(number, match.Groups["id"].Value, null);
+                continue;
+            }
+
+            match = ClassPattern().Match(line);
             if (match.Success)
             {
                 if (match.Groups["body"].Success && !match.Groups["close"].Success)
@@ -148,7 +249,7 @@ public static partial class Mermaid
             }
             if (line.StartsWith("%%", StringComparison.Ordinal))
             {
-                LayoutComment.Read(line[2..].Trim(), number, builder);
+                ReadComment(line, number, builder);
                 continue;
             }
             // Styling has no counterpart in Kandinsky.
@@ -156,9 +257,19 @@ public static partial class Mermaid
             {
                 continue;
             }
-            if (line.StartsWith("subgraph", StringComparison.Ordinal))
+            if (line == "end")
             {
-                throw ParsedDiagramBuilder.Error(number, "subgraphs are not supported yet.");
+                builder.EndGroup(number, "end");
+                continue;
+            }
+            var subgraph = SubgraphPattern().Match(line);
+            if (subgraph.Success)
+            {
+                builder.BeginGroup(
+                    number,
+                    subgraph.Groups["id"].Success ? subgraph.Groups["id"].Value : null,
+                    subgraph.Groups["label"].Success ? FlowchartText(subgraph.Groups["label"].Value) : null);
+                continue;
             }
             ReadFlowchartStatement(line, number, builder);
         }
@@ -205,11 +316,25 @@ public static partial class Mermaid
             }
             position += node.Length;
             var id = node.Groups["id"].Value;
-            var open = node.Groups["open"];
-            builder.DeclareShape(
-                id,
-                node.Groups["text"].Success ? FlowchartText(node.Groups["text"].Value) : null,
-                !open.Success ? null : open.Value == "[(" ? ShapeKind.Database : ShapeKind.Rectangle);
+            if (node.Groups["props"].Success)
+            {
+                // v11 shape syntax: A@{ shape: doc, label: "text" }
+                var props = node.Groups["props"].Value;
+                var shape = ShapePropertyPattern().Match(props);
+                var label = LabelPropertyPattern().Match(props);
+                builder.DeclareShape(
+                    id,
+                    label.Success ? FlowchartText(label.Groups["label"].Value) : null,
+                    shape.Success ? V11Kind(shape.Groups["shape"].Value) : null);
+            }
+            else
+            {
+                var open = node.Groups["open"];
+                builder.DeclareShape(
+                    id,
+                    node.Groups["text"].Success ? FlowchartText(node.Groups["text"].Value) : null,
+                    open.Success ? ClassicKind(open.Value, node.Groups["close"].Value) : null);
+            }
             ids.Add(id);
 
             var and = AndPattern().Match(line, position);
@@ -219,6 +344,20 @@ public static partial class Mermaid
             }
             position += and.Length;
         }
+    }
+
+    /// <summary>Reads layout comments, and a directive that draws all links as steps (angled edges).</summary>
+    private static void ReadComment(string line, int number, ParsedDiagramBuilder builder)
+    {
+        if (line.StartsWith("%%{", StringComparison.Ordinal))
+        {
+            if (StepCurvePattern().IsMatch(line))
+            {
+                builder.DefaultRouting = EdgeRouting.Angled;
+            }
+            return;
+        }
+        LayoutComment.Read(line[2..].Trim(), number, builder);
     }
 
     // Labels are single-line: line breaks become spaces.
@@ -245,6 +384,10 @@ public static partial class Mermaid
             {
                 builder.Title = match.Groups["title"].Value.Trim().Trim('"');
             }
+            if (StepCurvePattern().IsMatch(line))
+            {
+                builder.DefaultRouting = EdgeRouting.Angled;
+            }
         }
         throw new DiagramValidationException("Unterminated front matter: missing closing '---'.");
     }
@@ -261,14 +404,22 @@ public static partial class Mermaid
     [GeneratedRegex(@"^(?<left>\w+)\s*(?<arrow><-+|<\.+|-+>|\.+>)\s*(?<right>\w+)\s*(?::\s*(?<label>.*))?$")]
     private static partial Regex EdgePattern();
 
+    [GeneratedRegex(@"^namespace\s+(?<id>\w+)\s*\{$")]
+    private static partial Regex NamespacePattern();
+
+    // subgraph id, subgraph id [title], subgraph id["title"], or subgraph followed by a title only (the id is generated).
+    [GeneratedRegex(@"^subgraph\s+(?:(?<id>\w+)\s*(?:\[\s*(?:""(?<label>[^""]*)""|(?<label>[^\]""]*?))\s*\])?|""(?<label>[^""]+)""|(?<label>.+?))$")]
+    private static partial Regex SubgraphPattern();
+
     [GeneratedRegex(@"^(?:flowchart|graph)(?:\s+(?:TB|TD|BT|LR|RL))?\s*;?$")]
     private static partial Regex FlowchartPattern();
 
     [GeneratedRegex(@"^(?:style|classDef|class|linkStyle|click|direction)\s")]
     private static partial Regex FlowchartStylePattern();
 
-    // A node id with an optional shape such as [text], (text), [(text)] (database), {text}, ((text)) or "quoted" text, and an optional :::class.
-    [GeneratedRegex(@"\G\s*(?<id>\w+)(?:(?<open>\(\(\(|\(\[|\[\[|\[\(|\(\(|\{\{|\[/|\[\\|\[|\(|\{|>)\s*(?:""(?<text>[^""]*)""|(?<text>[^""]*?))\s*(?:\)\)\)|\]\)|\]\]|\)\]|\)\)|\}\}|/\]|\\\]|\]|\)|\}))?(?::::\w+)?\s*")]
+    // A node id with an optional shape such as [text], (text), [(text)] (database), {text}, ((text)) or "quoted" text,
+    // or the v11 shape syntax @{ shape: …, label: … }, and an optional :::class.
+    [GeneratedRegex(@"\G\s*(?<id>\w+)(?:@\{(?<props>[^}]*)\}|(?<open>\(\(\(|\(\[|\[\[|\[\(|\(\(|\{\{|\[/|\[\\|\[|\(|\{|>)\s*(?:""(?<text>[^""]*)""|(?<text>[^""]*?))\s*(?<close>\)\)\)|\]\)|\]\]|\)\]|\)\)|\}\}|/\]|\\\]|\]|\)|\}))?(?::::\w+)?\s*")]
     private static partial Regex NodePattern();
 
     // -->, -.->, ==> (any length) with an optional |label|, or the text forms -- label -->, -. label .->, == label ==>.
@@ -278,6 +429,16 @@ public static partial class Mermaid
     // Undirected and other links: ---, -.-, ===, ~~~, --o, --x, <-->.
     [GeneratedRegex(@"\G\s*[<ox]?[-=.~]{2,}")]
     private static partial Regex OtherLinkPattern();
+
+    [GeneratedRegex(@"\bshape:\s*(?<shape>[\w-]+)")]
+    private static partial Regex ShapePropertyPattern();
+
+    [GeneratedRegex(@"\blabel:\s*(?:""(?<label>[^""]*)""|(?<label>[^,]*))")]
+    private static partial Regex LabelPropertyPattern();
+
+    // "curve": "step" in an init directive or curve: step in the front matter config; also stepBefore / stepAfter.
+    [GeneratedRegex(@"[""']?curve[""']?\s*:\s*[""']?step", RegexOptions.IgnoreCase)]
+    private static partial Regex StepCurvePattern();
 
     [GeneratedRegex(@"\G\s*&\s*")]
     private static partial Regex AndPattern();

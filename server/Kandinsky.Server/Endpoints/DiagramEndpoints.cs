@@ -65,7 +65,7 @@ public static class DiagramEndpoints
             })
             .WithName("ImportDiagram")
             .WithSummary("Create a diagram from PlantUML or Mermaid text")
-            .WithDescription("Supports class diagrams with classes and directed associations, PlantUML `database` elements and Mermaid flowcharts (`[(text)]` nodes become databases). Shapes are laid out in a grid. The diagram is named `name`, else the title in the text, else `fallbackName` (e.g. the file name).");
+            .WithDescription("Supports class diagrams with classes and directed (optionally labeled) associations, PlantUML `database`, `hexagon` (decision), other deployment elements for flowchart symbols and container elements such as `package` (group), and Mermaid flowcharts in classic or v11 shape syntax (`[(text)]` nodes become databases, `{text}` nodes decisions, `([text])` terminals, `A@{ shape: doc }` documents, …; subgraphs become groups). `skinparam linetype ortho` and a Mermaid `curve: step` setting make all edges angled. Shapes are laid out in a grid. The diagram is named `name`, else the title in the text, else `fallbackName` (e.g. the file name).");
 
         diagrams.MapPost("/{id}/paste", (string id, PasteDiagramRequest request, DiagramService service) => TypedResults.Ok(service.Paste(id, request)))
             .WithName("PasteDiagram")
@@ -93,7 +93,7 @@ public static class DiagramEndpoints
             })
             .WithName("AddShape")
             .WithSummary("Add a shape")
-            .WithDescription("`kind` is `rectangle` (default) or `database`. Without X and Y the server places the shape in a free spot.");
+            .WithDescription("`kind` is `rectangle` (default), `database`, `decision`, `group` or a flowchart symbol: `start`, `end`, `terminal`, `rounded`, `io`, `subroutine`, `document`, `connector`, `preparation`, `manual`. Without X and Y the server places the shape in a free spot. A shape lying fully inside a group belongs to it (`parentId`, derived from the positions).");
 
         shapes.MapGet("/{shapeId}", (string id, string shapeId, DiagramService service) => TypedResults.Ok(service.GetShape(id, shapeId)))
             .WithName("GetShape")
@@ -110,7 +110,7 @@ public static class DiagramEndpoints
                 return TypedResults.NoContent();
             })
             .WithName("DeleteShape")
-            .WithSummary("Delete a rectangle and its connected edges");
+            .WithSummary("Delete a shape and its connected edges; a group is deleted with everything inside it");
 
         var edges = diagrams.MapGroup("/{id}/edges").WithTags("Edges");
 
@@ -120,7 +120,8 @@ public static class DiagramEndpoints
                 return TypedResults.Created($"/api/diagrams/{id}/edges/{edge.Id}", edge);
             })
             .WithName("AddEdge")
-            .WithSummary("Connect two rectangles with a directed edge");
+            .WithSummary("Connect two shapes with a directed edge")
+            .WithDescription("`routing` is `straight` (default) or `angled` (horizontal and vertical segments).");
 
         edges.MapGet("/{edgeId}", (string id, string edgeId, DiagramService service) => TypedResults.Ok(service.GetEdge(id, edgeId)))
             .WithName("GetEdge")

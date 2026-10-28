@@ -2,7 +2,10 @@ using Kandinsky.Server.Model;
 
 namespace Kandinsky.Server.Diagrams;
 
-/// <summary>Layered layout: connected shapes in rows following the edge direction, unconnected shapes in a grid below.</summary>
+/// <summary>
+/// Layered layout: connected shapes in rows following the edge direction, unconnected shapes in a grid below.
+/// The content of a group (shapes with that group as ParentId) is laid out the same way inside the group, which is sized to fit it.
+/// </summary>
 public static class DiagramLayout
 {
     private const double Origin = 40;
@@ -10,15 +13,100 @@ public static class DiagramLayout
     private const double RowGap = 80;
     private const int GridColumns = 5;
     private const int OrderingSweeps = 8;
+    private const double GroupPadding = 20;
+    private const double GroupTitleHeight = 36;
 
     public static IReadOnlyList<Shape> Arrange(IReadOnlyList<Shape> shapes, IReadOnlyList<Edge> edges)
     {
-        var index = shapes.Select((s, i) => (s.Id, i)).ToDictionary(p => p.Id, p => p.i);
-        var links = edges
-            .Where(e => e.SourceId != e.TargetId && index.ContainsKey(e.SourceId) && index.ContainsKey(e.TargetId))
-            .Select(e => (From: index[e.SourceId], To: index[e.TargetId]))
-            .Distinct()
-            .ToList();
+        var byId = shapes.ToDictionary(s => s.Id);
+        var parent = shapes.ToDictionary(s => s.Id, s => s.ParentId is { } p && byId.TryGetValue(p, out var g) && g.Kind == ShapeKind.Group ? p : null);
+        BreakCycles(parent);
+        var children = shapes.Where(s => parent[s.Id] is not null).ToLookup(s => parent[s.Id]!);
+        var sizes = shapes.ToDictionary(s => s.Id, s => (s.Width, s.Height));
+        var offsets = new Dictionary<string, (double X, double Y)>();
+
+        // The child of the container that is the shape itself or contains it, if any.
+        string? ChildOf(string? container, string id)
+        {
+            for (string? current = id; current is not null; current = parent[current])
+            {
+                if (parent[current] == container)
+                {
+                    return current;
+                }
+            }
+            return null;
+        }
+
+        // Lays out the content of a container (null for the top level) relative to its content origin and returns its size.
+        (double Width, double Height) Layout(string? container, IReadOnlyList<Shape> content)
+        {
+            foreach (var child in content.Where(c => children[c.Id].Any()))
+            {
+                var (width, height) = Layout(child.Id, children[child.Id].ToList());
+                sizes[child.Id] = (width + 2 * GroupPadding, height + GroupTitleHeight + GroupPadding);
+            }
+            var index = content.Select((s, i) => (s.Id, i)).ToDictionary(p => p.Id, p => p.i);
+            var links = edges
+                .Select(e => (From: ChildOf(container, e.SourceId), To: ChildOf(container, e.TargetId)))
+                .Where(l => l.From is not null && l.To is not null && l.From != l.To)
+                .Select(l => (index[l.From!], index[l.To!]))
+                .ToList();
+            var positions = ArrangeLevel(content.Select(s => sizes[s.Id]).ToList(), links);
+            for (var i = 0; i < content.Count; i++)
+            {
+                offsets[content[i].Id] = positions[i];
+            }
+            return content.Count == 0
+                ? (0, 0)
+                : (content.Select((s, i) => positions[i].X + sizes[s.Id].Width).Max(), content.Select((s, i) => positions[i].Y + sizes[s.Id].Height).Max());
+        }
+
+        Layout(null, shapes.Where(s => parent[s.Id] is null).ToList());
+
+        var placed = new Dictionary<string, Shape>();
+        Shape Place(Shape s)
+        {
+            if (placed.TryGetValue(s.Id, out var done))
+            {
+                return done;
+            }
+            var (x, y) = offsets[s.Id];
+            if (parent[s.Id] is { } p)
+            {
+                var group = Place(byId[p]);
+                (x, y) = (group.X + GroupPadding + x, group.Y + GroupTitleHeight + y);
+            }
+            else
+            {
+                (x, y) = (Origin + x, Origin + y);
+            }
+            return placed[s.Id] = s with { X = Math.Round(x), Y = Math.Round(y), Width = sizes[s.Id].Width, Height = sizes[s.Id].Height };
+        }
+        return shapes.Select(Place).ToList();
+    }
+
+    /// <summary>Moves shapes whose parent chain loops back to them to the top level.</summary>
+    private static void BreakCycles(Dictionary<string, string?> parent)
+    {
+        foreach (var id in parent.Keys.ToList())
+        {
+            var seen = new HashSet<string> { id };
+            for (var current = parent[id]; current is not null; current = parent[current])
+            {
+                if (!seen.Add(current))
+                {
+                    parent[id] = null;
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>Arranges boxes of the given sizes with the top-left of the whole arrangement at (0, 0).</summary>
+    private static (double X, double Y)[] ArrangeLevel(IReadOnlyList<(double Width, double Height)> shapes, List<(int From, int To)> links)
+    {
+        links = links.Distinct().ToList();
         var connected = links.SelectMany(l => new[] { l.From, l.To }).ToHashSet();
 
         var acyclic = ReverseBackEdges(shapes.Count, links);
@@ -27,8 +115,7 @@ public static class DiagramLayout
         var positions = new (double X, double Y)[shapes.Count];
         var bottom = PlaceLayers(shapes, layers, positions);
         PlaceGrid(shapes, Enumerable.Range(0, shapes.Count).Where(i => !connected.Contains(i)).ToList(), bottom, positions);
-
-        return shapes.Select((s, i) => s with { X = Math.Round(positions[i].X), Y = Math.Round(positions[i].Y) }).ToList();
+        return positions;
     }
 
     private static List<(int From, int To)> ReverseBackEdges(int count, List<(int From, int To)> links)
@@ -127,15 +214,15 @@ public static class DiagramLayout
         return layers;
     }
 
-    private static double PlaceLayers(IReadOnlyList<Shape> shapes, List<List<int>> layers, (double X, double Y)[] positions)
+    private static double PlaceLayers(IReadOnlyList<(double Width, double Height)> shapes, List<List<int>> layers, (double X, double Y)[] positions)
     {
         var rowWidths = layers.Select(row => row.Sum(v => shapes[v].Width) + ColumnGap * (row.Count - 1)).ToList();
         var maxWidth = rowWidths.DefaultIfEmpty(0).Max();
-        var y = Origin;
+        var y = 0.0;
 
         for (var i = 0; i < layers.Count; i++)
         {
-            var x = Origin + (maxWidth - rowWidths[i]) / 2;
+            var x = (maxWidth - rowWidths[i]) / 2;
             var rowHeight = layers[i].Max(v => shapes[v].Height);
             foreach (var v in layers[i])
             {
@@ -147,11 +234,11 @@ public static class DiagramLayout
         return y;
     }
 
-    private static void PlaceGrid(IReadOnlyList<Shape> shapes, List<int> items, double y, (double X, double Y)[] positions)
+    private static void PlaceGrid(IReadOnlyList<(double Width, double Height)> shapes, List<int> items, double y, (double X, double Y)[] positions)
     {
         foreach (var row in items.Chunk(GridColumns))
         {
-            var x = Origin;
+            var x = 0.0;
             foreach (var v in row)
             {
                 positions[v] = (x, y);
