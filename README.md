@@ -2,7 +2,7 @@
 
 Web app for creating code UML diagrams.
 
-![Kandinsky screenshot](screenshots/screenshot-1.png)
+![Kandinsky screenshot](screenshots/screenshot-2.png)
 
 - **Frontend** (`client/`): thin React client styled with Bootstrap CSS, with a header menu bar with a File drop-down (New, Open, Save, Save As, Export as SVG / PNG) and a Settings drop-down (default save format), whiteboard tabs at the top of the canvas and a left palette with shapes (rectangle, rounded, database, group), flowchart symbols (start, end, terminal, decision, input / output, subroutine, document, preparation, manual operation, connector) and edges (straight or angled).
 - **Backend** (`server/`): ASP.NET Core minimal API that owns and processes the diagrams. The UI and external clients (e.g. an MCP server) use the same REST API.
