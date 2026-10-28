@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { canPickOpenFile, formats, type ImageFormat } from './saveFile'
+import { ALL_FORMATS, OPENABLE_EXTENSIONS, formats, type ImageFormat } from './files/fileFormats'
+import { canPickOpenFile } from './files/fileSystemAccess'
 import type { Format } from './types'
 
 type Menu = 'file' | 'settings'
@@ -101,7 +102,7 @@ export function MenuBar(props: Props) {
           {open === 'settings' && (
             <div className="dropdown-menu show shadow" role="menu">
               <h6 className="dropdown-header">Default save format</h6>
-              {(Object.keys(formats) as Format[]).map((format) => (
+              {ALL_FORMATS.map((format) => (
                 <button
                   key={format}
                   type="button"
@@ -124,7 +125,7 @@ export function MenuBar(props: Props) {
           ref={fileInput}
           type="file"
           hidden
-          accept=".puml,.plantuml,.pu,.iuml,.mmd,.mermaid,.txt"
+          accept={OPENABLE_EXTENSIONS.join(',')}
           onChange={(e) => {
             const file = e.target.files?.[0]
             e.target.value = ''

@@ -1,5 +1,5 @@
-import { SHAPE_MIME } from './Canvas'
 import type { ReactNode } from 'react'
+import { startShapeDrag } from './canvas/dragAndDrop'
 import type { AlignDirection, ShapeKind, Tool } from './types'
 
 interface Props {
@@ -154,10 +154,7 @@ function ShapeTool({ kind, label, children, hasDiagram, tool, onToolChange }: Sh
       draggable={hasDiagram}
       title="Click, then click on the canvas to place it, or drag onto the canvas"
       onClick={() => onToolChange(tool === kind ? 'select' : kind)}
-      onDragStart={(e) => {
-        e.dataTransfer.setData(SHAPE_MIME, kind)
-        e.dataTransfer.effectAllowed = 'copy'
-      }}
+      onDragStart={(e) => startShapeDrag(e, kind)}
     >
       <svg width="28" height="18" aria-hidden="true">
         {children}
