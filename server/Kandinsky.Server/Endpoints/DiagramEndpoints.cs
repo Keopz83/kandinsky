@@ -65,7 +65,7 @@ public static class DiagramEndpoints
             })
             .WithName("ImportDiagram")
             .WithSummary("Create a diagram from PlantUML or Mermaid text")
-            .WithDescription("Supports class diagrams with classes and directed associations. Shapes are laid out in a grid. The diagram is named `name`, else the title in the text, else `fallbackName` (e.g. the file name).");
+            .WithDescription("Supports class diagrams with classes and directed associations, PlantUML `database` elements and Mermaid flowcharts (`[(text)]` nodes become databases). Shapes are laid out in a grid. The diagram is named `name`, else the title in the text, else `fallbackName` (e.g. the file name).");
 
         diagrams.MapPost("/{id}/paste", (string id, PasteDiagramRequest request, DiagramService service) => TypedResults.Ok(service.Paste(id, request)))
             .WithName("PasteDiagram")
@@ -92,17 +92,17 @@ public static class DiagramEndpoints
                 return TypedResults.Created($"/api/diagrams/{id}/shapes/{shape.Id}", shape);
             })
             .WithName("AddShape")
-            .WithSummary("Add a rectangle")
-            .WithDescription("Without X and Y the server places the rectangle in a free spot.");
+            .WithSummary("Add a shape")
+            .WithDescription("`kind` is `rectangle` (default) or `database`. Without X and Y the server places the shape in a free spot.");
 
         shapes.MapGet("/{shapeId}", (string id, string shapeId, DiagramService service) => TypedResults.Ok(service.GetShape(id, shapeId)))
             .WithName("GetShape")
-            .WithSummary("Get a rectangle");
+            .WithSummary("Get a shape");
 
         shapes.MapPatch("/{shapeId}", (string id, string shapeId, UpdateShapeRequest request, DiagramService service) =>
                 TypedResults.Ok(service.UpdateShape(id, shapeId, request)))
             .WithName("UpdateShape")
-            .WithSummary("Move, resize or relabel a rectangle");
+            .WithSummary("Move, resize, relabel or change the kind of a shape");
 
         shapes.MapDelete("/{shapeId}", (string id, string shapeId, DiagramService service) =>
             {

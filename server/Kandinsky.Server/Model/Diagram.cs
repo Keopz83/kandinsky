@@ -1,7 +1,20 @@
+using System.Text.Json.Serialization;
+
 namespace Kandinsky.Server.Model;
 
-/// <summary>A rectangle on the diagram canvas.</summary>
-public sealed record Shape(string Id, string Label, double X, double Y, double Width, double Height);
+/// <summary>How a shape is drawn: a plain rectangle or a database cylinder.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<ShapeKind>))]
+public enum ShapeKind
+{
+    [JsonStringEnumMemberName("rectangle")]
+    Rectangle,
+
+    [JsonStringEnumMemberName("database")]
+    Database,
+}
+
+/// <summary>A shape on the diagram canvas: a rectangle or a database within its bounds.</summary>
+public sealed record Shape(string Id, string Label, double X, double Y, double Width, double Height, ShapeKind Kind = ShapeKind.Rectangle);
 
 /// <summary>A directed edge from the source shape to the target shape.</summary>
 public sealed record Edge(string Id, string SourceId, string TargetId, string? Label);

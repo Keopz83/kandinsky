@@ -7,11 +7,37 @@ namespace Kandinsky.Server.Formats;
 
 /// <summary>
 /// Mermaid subset: classDiagram with classes, optional labels and directed associations;
-/// flowchart with nodes (any shape becomes a rectangle) and directed links.
+/// flowchart with nodes (database nodes <c>[(text)]</c> become databases, any other shape a rectangle) and directed links.
 /// </summary>
 public static partial class Mermaid
 {
-    public static string Export(Diagram diagram)
+    /// <summary>Exports a class diagram, or a flowchart when the diagram has databases, which class diagrams cannot express.</summary>
+    public static string Export(Diagram diagram) =>
+        diagram.Shapes.Any(s => s.Kind == ShapeKind.Database) ? ExportFlowchart(diagram) : ExportClassDiagram(diagram);
+
+    private static string ExportFlowchart(Diagram diagram)
+    {
+        var text = new StringBuilder();
+        text.Append("flowchart TB\n");
+        foreach (var shape in diagram.Shapes)
+        {
+            var (open, close) = shape.Kind == ShapeKind.Database ? ("[(", ")]") : ("[", "]");
+            text.Append($"  {shape.Id}{open}\"{shape.Label.Replace('"', '\'')}\"{close}\n");
+        }
+        foreach (var edge in diagram.Edges)
+        {
+            text.Append($"  {edge.SourceId} -->");
+            if (edge.Label is not null)
+            {
+                text.Append($"|\"{edge.Label.Replace('"', '\'')}\"|");
+            }
+            text.Append($" {edge.TargetId}\n");
+        }
+        AppendLayout(text, diagram);
+        return text.ToString();
+    }
+
+    private static string ExportClassDiagram(Diagram diagram)
     {
         var text = new StringBuilder();
         text.Append("classDiagram\n");
@@ -28,11 +54,16 @@ public static partial class Mermaid
             }
             text.Append('\n');
         }
+        AppendLayout(text, diagram);
+        return text.ToString();
+    }
+
+    private static void AppendLayout(StringBuilder text, Diagram diagram)
+    {
         foreach (var shape in diagram.Shapes)
         {
             text.Append("  %% ").Append(LayoutComment.Format(shape)).Append('\n');
         }
-        return text.ToString();
     }
 
     public static ParsedDiagram Parse(string text)
@@ -174,7 +205,11 @@ public static partial class Mermaid
             }
             position += node.Length;
             var id = node.Groups["id"].Value;
-            builder.DeclareShape(id, node.Groups["text"].Success ? FlowchartText(node.Groups["text"].Value) : null);
+            var open = node.Groups["open"];
+            builder.DeclareShape(
+                id,
+                node.Groups["text"].Success ? FlowchartText(node.Groups["text"].Value) : null,
+                !open.Success ? null : open.Value == "[(" ? ShapeKind.Database : ShapeKind.Rectangle);
             ids.Add(id);
 
             var and = AndPattern().Match(line, position);
@@ -232,8 +267,8 @@ public static partial class Mermaid
     [GeneratedRegex(@"^(?:style|classDef|class|linkStyle|click|direction)\s")]
     private static partial Regex FlowchartStylePattern();
 
-    // A node id with an optional shape such as [text], (text), [(text)], {text}, ((text)) or "quoted" text, and an optional :::class.
-    [GeneratedRegex(@"\G\s*(?<id>\w+)(?:(?:\(\(\(|\(\[|\[\[|\[\(|\(\(|\{\{|\[/|\[\\|\[|\(|\{|>)\s*(?:""(?<text>[^""]*)""|(?<text>[^""]*?))\s*(?:\)\)\)|\]\)|\]\]|\)\]|\)\)|\}\}|/\]|\\\]|\]|\)|\}))?(?::::\w+)?\s*")]
+    // A node id with an optional shape such as [text], (text), [(text)] (database), {text}, ((text)) or "quoted" text, and an optional :::class.
+    [GeneratedRegex(@"\G\s*(?<id>\w+)(?:(?<open>\(\(\(|\(\[|\[\[|\[\(|\(\(|\{\{|\[/|\[\\|\[|\(|\{|>)\s*(?:""(?<text>[^""]*)""|(?<text>[^""]*?))\s*(?:\)\)\)|\]\)|\]\]|\)\]|\)\)|\}\}|/\]|\\\]|\]|\)|\}))?(?::::\w+)?\s*")]
     private static partial Regex NodePattern();
 
     // -->, -.->, ==> (any length) with an optional |label|, or the text forms -- label -->, -. label .->, == label ==>.

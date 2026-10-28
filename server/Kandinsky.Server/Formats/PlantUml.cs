@@ -5,16 +5,22 @@ using Kandinsky.Server.Model;
 
 namespace Kandinsky.Server.Formats;
 
-/// <summary>PlantUML class diagram subset: classes (and similar elements) and directed associations.</summary>
+/// <summary>PlantUML class diagram subset: classes (and similar elements), databases and directed associations.</summary>
 public static partial class PlantUml
 {
     public static string Export(Diagram diagram)
     {
         var text = new StringBuilder();
         text.Append("@startuml\n");
+        // Class diagrams accept database elements only with mixing allowed.
+        if (diagram.Shapes.Any(s => s.Kind == ShapeKind.Database))
+        {
+            text.Append("allowmixing\n");
+        }
         foreach (var shape in diagram.Shapes)
         {
-            text.Append($"class \"{shape.Label.Replace('"', '\'')}\" as {shape.Id}\n");
+            var keyword = shape.Kind == ShapeKind.Database ? "database" : "class";
+            text.Append($"{keyword} \"{shape.Label.Replace('"', '\'')}\" as {shape.Id}\n");
         }
         foreach (var edge in diagram.Edges)
         {
@@ -87,7 +93,10 @@ public static partial class PlantUml
                 {
                     throw ParsedDiagramBuilder.Error(number, "class members are not supported yet.");
                 }
-                builder.DeclareShape(match.Groups["id"].Value, match.Groups["label"].Success ? match.Groups["label"].Value : null);
+                builder.DeclareShape(
+                    match.Groups["id"].Value,
+                    match.Groups["label"].Success ? match.Groups["label"].Value : null,
+                    match.Groups["keyword"].Value == "database" ? ShapeKind.Database : ShapeKind.Rectangle);
                 continue;
             }
 
@@ -108,13 +117,13 @@ public static partial class PlantUml
         throw new DiagramValidationException(started ? "Missing @enduml." : "PlantUML text must start with @startuml.");
     }
 
-    [GeneratedRegex(@"^(skinparam\b|hide\b|show\b|left to right direction$|top to bottom direction$)")]
+    [GeneratedRegex(@"^(skinparam\b|hide\b|show\b|allowmixing$|left to right direction$|top to bottom direction$)")]
     private static partial Regex IgnoredPattern();
 
     [GeneratedRegex(@"^title\s+(?<title>.+)$")]
     private static partial Regex TitlePattern();
 
-    [GeneratedRegex(@"^(?:abstract\s+class|abstract|class|interface|enum|rectangle)\s+(?:""(?<label>[^""]+)""\s+as\s+(?<id>\w+)|(?<id>\w+)\s+as\s+""(?<label>[^""]+)""|(?<id>\w+))\s*(?<body>\{\s*(?<close>\})?)?$")]
+    [GeneratedRegex(@"^(?<keyword>abstract\s+class|abstract|class|interface|enum|rectangle|database)\s+(?:""(?<label>[^""]+)""\s+as\s+(?<id>\w+)|(?<id>\w+)\s+as\s+""(?<label>[^""]+)""|(?<id>\w+))\s*(?<body>\{\s*(?<close>\})?)?$")]
     private static partial Regex ElementPattern();
 
     [GeneratedRegex(@"^(?<left>\w+)\s*(?<arrow><-+|<\.+|-+>|\.+>)\s*(?<right>\w+)\s*(?::\s*(?<label>.*))?$")]

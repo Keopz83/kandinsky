@@ -124,7 +124,7 @@ public class FormatTests
         Assert.Equal(
             [
                 new("MXO", "MXO REST API"), new("DS", "DataSource Backend CronJob"), new("ASSET", "Asset.API"),
-                new("DB", "Oracle source of truth"), new("VIEW", "DB View"), new("A", "A"), new("B", "B"), new("C", "Quoted (text)"),
+                new("DB", "Oracle source of truth", null, ShapeKind.Database), new("VIEW", "DB View"), new("A", "A"), new("B", "B"), new("C", "Quoted (text)"),
             ],
             parsed.Shapes);
         Assert.Equal(
@@ -133,6 +133,80 @@ public class FormatTests
                 new("VIEW", "A", null), new("VIEW", "B", null), new("A", "C", null), new("B", "C", null),
             ],
             parsed.Edges);
+    }
+
+    [Fact]
+    public void Parses_mermaid_flowchart_databases()
+    {
+        var parsed = Mermaid.Parse("""
+            flowchart LR
+                ASSET[Asset.API] --> DB[(Oracle<br/>source of truth)]
+                DB --> VIEW[DB View]
+                KAFKA[Kafka Topic] -->|ES Sink Connector| ES[("Elasticsearch<br/>pra.env.index")]
+                ES --> DB
+            """);
+
+        Assert.Equal(
+            [
+                new("ASSET", "Asset.API"), new("DB", "Oracle source of truth", null, ShapeKind.Database), new("VIEW", "DB View"),
+                new("KAFKA", "Kafka Topic"), new("ES", "Elasticsearch pra.env.index", null, ShapeKind.Database),
+            ],
+            parsed.Shapes);
+    }
+
+    [Fact]
+    public void Parses_plantuml_databases()
+    {
+        var parsed = PlantUml.Parse("""
+            @startuml
+            allowmixing
+            class API
+            database "Oracle DB" as DB
+            database Cache
+            API --> DB
+            @enduml
+            """);
+
+        Assert.Equal(
+            [new("API", "API"), new("DB", "Oracle DB", null, ShapeKind.Database), new("Cache", "Cache", null, ShapeKind.Database)],
+            parsed.Shapes);
+    }
+
+    private static readonly Diagram Storage = new(
+        "d2",
+        "Storage",
+        [new Shape("s1", "API", 0, 0, 140, 60), new Shape("s2", "Oracle \"main\"", 0, 120, 140, 80, ShapeKind.Database)],
+        [new Edge("e1", "s1", "s2", "writes")]);
+
+    [Fact]
+    public void Exports_plantuml_databases()
+    {
+        Assert.Equal(
+            "@startuml\nallowmixing\nclass \"API\" as s1\ndatabase \"Oracle 'main'\" as s2\ns1 --> s2 : writes\n"
+                + "' kandinsky:layout s1 x=0 y=0 width=140 height=60\n' kandinsky:layout s2 x=0 y=120 width=140 height=80\n@enduml\n",
+            PlantUml.Export(Storage));
+    }
+
+    [Fact]
+    public void Exports_mermaid_flowchart_when_the_diagram_has_databases()
+    {
+        Assert.Equal(
+            "flowchart TB\n  s1[\"API\"]\n  s2[(\"Oracle 'main'\")]\n  s1 -->|\"writes\"| s2\n"
+                + "  %% kandinsky:layout s1 x=0 y=0 width=140 height=60\n  %% kandinsky:layout s2 x=0 y=120 width=140 height=80\n",
+            Mermaid.Export(Storage));
+    }
+
+    [Theory]
+    [InlineData(DiagramFormat.PlantUml)]
+    [InlineData(DiagramFormat.Mermaid)]
+    public void Round_trips_databases(DiagramFormat format)
+    {
+        var parsed = DiagramFormats.Parse(DiagramFormats.Export(Storage, format), format);
+
+        Assert.Equal(
+            [new("s1", "API", new(0, 0, 140, 60)), new("s2", "Oracle 'main'", new(0, 120, 140, 80), ShapeKind.Database)],
+            parsed.Shapes);
+        Assert.Equal([new("s1", "s2", "writes")], parsed.Edges);
     }
 
     [Theory]

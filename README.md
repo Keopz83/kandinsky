@@ -4,9 +4,9 @@ Web app for creating code UML diagrams.
 
 ![Kandinsky screenshot](screenshots/screenshot-1.png)
 
-- **Frontend** (`client/`): thin React client styled with Bootstrap CSS, with a header menu bar with a File drop-down (New, Open, Save, Save As) and a Settings drop-down (default save format), whiteboard tabs at the top of the canvas and a left shape palette (rectangle, directed edge).
+- **Frontend** (`client/`): thin React client styled with Bootstrap CSS, with a header menu bar with a File drop-down (New, Open, Save, Save As) and a Settings drop-down (default save format), whiteboard tabs at the top of the canvas and a left shape palette (rectangle, database, directed edge).
 - **Backend** (`server/`): ASP.NET Core minimal API that owns and processes the diagrams. The UI and external clients (e.g. an MCP server) use the same REST API.
-- **Formats:** import and export as PlantUML or Mermaid class diagrams. Shape positions are kept in `kandinsky:layout` comments; files without them are auto-laid out on import.
+- **Formats:** import and export as PlantUML or Mermaid class diagrams; Mermaid flowcharts can be imported too. Databases are PlantUML `database` elements and Mermaid `[(text)]` nodes (Mermaid export becomes a flowchart when the diagram has databases). Shape positions are kept in `kandinsky:layout` comments; files without them are auto-laid out on import.
 
 See [REQUIREMENTS.md](REQUIREMENTS.md) for requirements, decisions and open points.
 
@@ -31,7 +31,7 @@ Open http://localhost:5180.
 
 - The app opens with a new blank "Untitled" diagram (a reload keeps the open one, its id is in the URL hash).
 - Every diagram on the server is a tab at the top; click a tab to switch, **+** (or **New**) creates an "Untitled" diagram, **×** deletes a diagram (asks for confirmation only if it has unsaved changes, i.e. changed since it was last saved to or opened from a file). Double-click a tab to rename the diagram in place (Enter or clicking elsewhere confirms, Esc cancels). The name is shown only on the tab. Saved files don't store the name, it is the file name: choosing a file name in the Save / Save As dialog renames the diagram to it, and opening a file names the diagram after the file (a title in the file is ignored).
-- **Rectangle**: click it, then click on the canvas to place one there (Esc or clicking the tool again cancels), or drag it onto the canvas.
+- **Rectangle** / **Database**: click it, then click on the canvas to place one there (Esc or clicking the tool again cancels), or drag it onto the canvas. A database is drawn as a cylinder and otherwise behaves like a rectangle.
 - **Directed edge**: click it, then press on the source rectangle and drag onto the target (releasing elsewhere cancels). The tool stays active for further edges until Esc is pressed or the tool is clicked again.
 - Drag rectangles or edges to move them (dragging one of several selected objects moves them all; a selected edge carries its two rectangles along), Shift+drag to copy them (copied edges connect the copied rectangles), drag the corner handle to resize, double-click a rectangle or edge to edit its label, press Delete to remove the selection.
 - **Save** opens a save dialog to choose the file location and format (PlantUML or Mermaid, with layout comments, so the file can be reopened with **Open…**); later Saves of the same whiteboard overwrite that file without asking. A whiteboard opened from a file is saved back to that file (in its format) without asking, even on the first Save. After a whiteboard is renamed, Save opens the dialog again with the new name as file name, so the old file is kept. **Save As…** always asks for a new location. Shortcuts: Ctrl+S / Cmd+S saves, Ctrl+Shift+S / Cmd+Shift+S saves as. **Settings → Default save format** selects the format offered first (default: Mermaid; stored in the browser). The dialog needs the File System Access API (Chrome, Edge); other browsers download the file in the default format instead. If the browser refuses write access to the chosen file (e.g. in embedded browsers), the file is downloaded instead and the next Save asks for a location again.
@@ -55,8 +55,8 @@ OpenAPI document: http://localhost:5080/openapi/v1.json. Example requests: [Kand
 | POST | `/api/diagrams/import` | Create a diagram from text (`{ text, format?, name? }`) |
 | POST | `/api/diagrams/{id}/align` | Align shapes (`{ shapeIds, direction: "horizontal" \| "vertical" }`) |
 | POST | `/api/diagrams/{id}/layout` | Auto-layout all shapes |
-| POST | `/api/diagrams/{id}/shapes` | Add a rectangle |
-| GET / PATCH / DELETE | `/api/diagrams/{id}/shapes/{shapeId}` | Get / update / delete a rectangle |
+| POST | `/api/diagrams/{id}/shapes` | Add a shape (`kind: "rectangle" \| "database"`, default rectangle) |
+| GET / PATCH / DELETE | `/api/diagrams/{id}/shapes/{shapeId}` | Get / update / delete a shape |
 | POST | `/api/diagrams/{id}/edges` | Add a directed edge |
 | GET / PATCH / DELETE | `/api/diagrams/{id}/edges/{edgeId}` | Get / update / delete an edge |
 

@@ -68,6 +68,48 @@ public sealed class ApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Adds_and_updates_database_shapes()
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+
+        var response = await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/shapes", new { kind = "database", x = 10, y = 20 });
+        Assert.Contains("\"kind\":\"database\"", await response.Content.ReadAsStringAsync());
+        var database = await Read<Shape>(response, HttpStatusCode.Created);
+        var rectangle = await Read<Shape>(await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/shapes", new { label = "A" }), HttpStatusCode.Created);
+        var changed = await Read<Shape>(await client.PatchAsJsonAsync($"/api/diagrams/{diagram.Id}/shapes/{rectangle.Id}", new { kind = "database" }), HttpStatusCode.OK);
+
+        Assert.Equal(("Database", ShapeKind.Database), (database.Label, database.Kind));
+        Assert.Equal(ShapeKind.Rectangle, rectangle.Kind);
+        Assert.Equal(rectangle with { Kind = ShapeKind.Database }, changed);
+    }
+
+    [Fact]
+    public async Task Imports_and_pastes_mermaid_flowchart_databases()
+    {
+        var client = CreateClient();
+        var text = """
+            ```mermaid
+            flowchart LR
+                ASSET[Asset.API] --> DB[(Oracle<br/>source of truth)]
+                DB --> VIEW[DB View]
+            ```
+            """;
+
+        var imported = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams/import", new { text }), HttpStatusCode.Created);
+        var pasted = await Read<PasteResult>(await client.PostAsJsonAsync($"/api/diagrams/{imported.Id}/paste", new { text }), HttpStatusCode.OK);
+
+        Assert.Equal(
+            [ShapeKind.Rectangle, ShapeKind.Database, ShapeKind.Rectangle],
+            imported.Shapes.Select(s => s.Kind));
+        Assert.Equal(
+            [ShapeKind.Rectangle, ShapeKind.Database, ShapeKind.Rectangle],
+            pasted.Diagram.Shapes.Where(s => pasted.ShapeIds.Contains(s.Id)).Select(s => s.Kind));
+        Assert.Contains("[(\"Oracle source of truth\")]", await client.GetStringAsync($"/api/diagrams/{imported.Id}/export?format=mermaid"));
+        Assert.Contains("database \"Oracle source of truth\" as DB", await client.GetStringAsync($"/api/diagrams/{imported.Id}/export?format=plantuml"));
+    }
+
+    [Fact]
     public async Task Deleting_shape_removes_connected_edges()
     {
         var client = CreateClient();

@@ -1,11 +1,12 @@
 using Kandinsky.Server.Diagrams;
+using Kandinsky.Server.Model;
 
 namespace Kandinsky.Server.Formats;
 
 /// <summary>Position and size of a shape, stored in a layout comment.</summary>
 public sealed record ParsedBounds(double X, double Y, double Width, double Height);
 
-public sealed record ParsedShape(string Id, string Label, ParsedBounds? Bounds = null);
+public sealed record ParsedShape(string Id, string Label, ParsedBounds? Bounds = null, ShapeKind Kind = ShapeKind.Rectangle);
 
 public sealed record ParsedEdge(string SourceId, string TargetId, string? Label);
 
@@ -21,19 +22,18 @@ internal sealed class ParsedDiagramBuilder
 
     public string? Title { get; set; }
 
-    public void DeclareShape(string id, string? label)
+    /// <summary>Declares a shape or updates the label and kind of a declared one; null keeps the current value.</summary>
+    public void DeclareShape(string id, string? label, ShapeKind? kind = null)
     {
         if (_shapeIndex.TryGetValue(id, out var index))
         {
-            if (label is not null)
-            {
-                _shapes[index] = _shapes[index] with { Label = label };
-            }
+            var shape = _shapes[index];
+            _shapes[index] = shape with { Label = label ?? shape.Label, Kind = kind ?? shape.Kind };
             return;
         }
 
         _shapeIndex[id] = _shapes.Count;
-        _shapes.Add(new ParsedShape(id, label ?? id));
+        _shapes.Add(new ParsedShape(id, label ?? id, null, kind ?? ShapeKind.Rectangle));
     }
 
     public void AddEdge(int line, string sourceId, string targetId, string? label)

@@ -1,5 +1,8 @@
+export type ShapeKind = 'rectangle' | 'database'
+
 export interface Shape {
   id: string
+  kind: ShapeKind
   label: string
   x: number
   y: number
@@ -36,4 +39,4 @@ export type Format = 'plantuml' | 'mermaid'
 
 export type AlignDirection = 'horizontal' | 'vertical'
 
-export type Tool = 'select' | 'rectangle' | 'edge'
+export type Tool = 'select' | ShapeKind | 'edge'

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { DragEvent, PointerEvent } from 'react'
 import { api } from './api'
 import { LabelInput } from './LabelInput'
-import type { Diagram, Edge, Shape, Tool } from './types'
+import type { Diagram, Edge, Shape, ShapeKind, Tool } from './types'
 
 export const SHAPE_MIME = 'application/x-kandinsky-shape'
 
@@ -94,6 +94,41 @@ interface Props {
   mutate: Mutate
 }
 
+/** Height of the elliptical top (and bottom) of a database cylinder. */
+const capHeight = (s: Shape) => (s.kind === 'database' ? Math.min(12, s.height / 4, s.width / 4) : 0)
+
+interface OutlineProps {
+  shape: Shape
+  onPointerDown?: (e: PointerEvent<SVGElement>) => void
+  onDoubleClick?: () => void
+}
+
+/** The shape's outline: a rectangle, or a cylinder with the front edge of its top drawn separately. */
+function ShapeOutline({ shape, ...events }: OutlineProps) {
+  const { x, y, width: w, height: h } = shape
+  if (shape.kind !== 'database') {
+    return <rect className="outline" x={x} y={y} width={w} height={h} rx={4} {...events} />
+  }
+  const rx = w / 2
+  const ry = capHeight(shape) / 2
+  return (
+    <>
+      <path
+        className="outline"
+        d={`M${x},${y + ry} A${rx},${ry} 0 0 1 ${x + w},${y + ry} V${y + h - ry} A${rx},${ry} 0 0 1 ${x},${y + h - ry} Z`}
+        {...events}
+      />
+      <path className="outline-detail" d={`M${x},${y + ry} A${rx},${ry} 0 0 0 ${x + w},${y + ry}`} />
+    </>
+  )
+}
+
+/** The label area: below the top of a database cylinder. */
+const labelBox = (s: Shape) => {
+  const top = capHeight(s)
+  return { x: s.x, y: s.y + top, width: s.width, height: Math.max(0, s.height - top) }
+}
+
 const center = (s: Shape): Point => ({ x: s.x + s.width / 2, y: s.y + s.height / 2 })
 
 const midpoint = (points: Point[]): Point => ({
@@ -175,6 +210,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   const shapes = diagram.shapes.map((s) => dragged.get(s.id) ?? s)
   const byId = new Map(shapes.map((s) => [s.id, s]))
   const source = tool === 'edge' && edgeSource ? byId.get(edgeSource) : undefined
+  const placing = tool === 'rectangle' || tool === 'database' ? tool : null
   const selectedShapes = selected.filter((id) => byId.has(id))
   const selectedEdges = diagram.edges.filter((edge) => selected.includes(edge.id))
 
@@ -375,8 +411,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
       }
       return
     }
-    if (tool === 'rectangle') {
-      placeRectangle(e)
+    if (placing) {
+      placeShape(e, placing)
       return
     }
     if (kind === 'move' && (e.ctrlKey || e.metaKey)) {
@@ -437,7 +473,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
       await mutate(async (d) => {
         const copies = new Map<string, string>()
         for (const c of currents) {
-          const copy = await api.addShape(d, { label: c.label, x: c.x, y: c.y, width: c.width, height: c.height })
+          const copy = await api.addShape(d, { kind: c.kind, label: c.label, x: c.x, y: c.y, width: c.width, height: c.height })
           copies.set(c.id, copy.id)
         }
         const edgeIds: string[] = []
@@ -463,8 +499,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
       return
     }
     setEdgeSource(null)
-    if (tool === 'rectangle') {
-      placeRectangle(e)
+    if (placing) {
+      placeShape(e, placing)
       return
     }
     if (tool !== 'select') {
@@ -519,14 +555,14 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     }
   }
 
-  /** Adds a rectangle centered on the given client position and selects it. */
-  function placeRectangle(e: { clientX: number; clientY: number }) {
+  /** Adds a shape centered on the given client position and selects it. */
+  function placeShape(e: { clientX: number; clientY: number }, kind: ShapeKind) {
     const p = toPoint(e)
     const x = Math.max(0, Math.round(p.x - DEFAULT_WIDTH / 2))
     const y = Math.max(0, Math.round(p.y - DEFAULT_HEIGHT / 2))
     onToolDone()
     void mutate(async (d) => {
-      const shape = await api.addShape(d, { x, y })
+      const shape = await api.addShape(d, { kind, x, y })
       onSelect([shape.id])
     })
   }
@@ -536,7 +572,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
       return
     }
     e.preventDefault()
-    placeRectangle(e)
+    placeShape(e, e.dataTransfer.getData(SHAPE_MIME) === 'database' ? 'database' : 'rectangle')
   }
 
   const stopEditing = () => setEditing(null)
@@ -548,7 +584,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
 
   return (
     <div
-      className={`canvas ${tool === 'edge' ? 'connecting' : ''} ${tool === 'rectangle' ? 'placing' : ''} ${pan || touchPan ? 'panning' : ''}`}
+      className={`canvas ${tool === 'edge' ? 'connecting' : ''} ${placing ? 'placing' : ''} ${pan || touchPan ? 'panning' : ''}`}
       onPointerDownCapture={onPanStart}
       onPointerMoveCapture={onPanMove}
       onPointerUpCapture={onPanEnd}
@@ -641,22 +677,12 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
                 key={shape.id}
                 className={`shape ${isSelected ? 'selected' : ''} ${isAnchor ? 'anchor' : ''} ${source?.id === shape.id || dropTarget?.id === shape.id ? 'source' : ''}`}
               >
-                <rect
-                  x={shape.x}
-                  y={shape.y}
-                  width={shape.width}
-                  height={shape.height}
-                  rx={4}
+                <ShapeOutline
+                  shape={shape}
                   onPointerDown={(e) => startDrag(e, shape.id, 'move')}
                   onDoubleClick={() => setEditing({ kind: 'shape', id: shape.id })}
                 />
-                <foreignObject
-                  x={shape.x}
-                  y={shape.y}
-                  width={shape.width}
-                  height={shape.height}
-                  pointerEvents={isEditing ? undefined : 'none'}
-                >
+                <foreignObject {...labelBox(shape)} pointerEvents={isEditing ? undefined : 'none'}>
                   {isEditing ? (
                     <LabelInput
                       className="label-input"
@@ -711,8 +737,8 @@ function CopyGhosts({ drag }: { drag: Drag }) {
       })}
       {drag.currents.map((c) => (
         <g key={c.id} className="shape ghost">
-          <rect x={c.x} y={c.y} width={c.width} height={c.height} rx={4} />
-          <foreignObject x={c.x} y={c.y} width={c.width} height={c.height}>
+          <ShapeOutline shape={c} />
+          <foreignObject {...labelBox(c)}>
             <div className="label">{c.label}</div>
           </foreignObject>
         </g>

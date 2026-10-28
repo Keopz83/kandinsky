@@ -117,6 +117,11 @@ body {
   stroke: white;
 }
 
+.palette-item svg path.cylinder {
+  fill: var(--shape-fill);
+  stroke: inherit;
+}
+
 .main {
   flex: 1;
   min-width: 0;
@@ -175,26 +180,34 @@ body {
   cursor: grabbing !important;
 }
 
-.canvas.connecting .shape rect,
+.canvas.connecting .shape .outline,
 .canvas.placing svg,
 .canvas.placing svg * {
   cursor: crosshair;
 }
 
-.shape rect {
+.shape .outline,
+.shape .outline-detail {
   fill: var(--shape-fill);
   stroke: var(--shape-stroke);
   stroke-width: 1.5;
   cursor: move;
 }
 
-.shape.selected rect,
-.shape.source rect {
+.shape .outline-detail {
+  fill: none;
+  pointer-events: none;
+}
+
+.shape.selected .outline,
+.shape.selected .outline-detail,
+.shape.source .outline,
+.shape.source .outline-detail {
   stroke: var(--accent);
   stroke-width: 2;
 }
 
-.shape.anchor > rect:first-child {
+.shape.anchor > .outline {
   stroke-width: 3.5;
 }
 
@@ -221,7 +234,8 @@ body {
   stroke-dasharray: 4 3;
 }
 
-.shape.ghost rect {
+.shape.ghost .outline,
+.shape.ghost .outline-detail {
   stroke: var(--accent);
   stroke-dasharray: 4 3;
 }

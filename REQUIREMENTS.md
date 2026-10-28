@@ -12,7 +12,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 ## Diagram model
 
 - **R-MOD-1** A diagram has an id, a name and a collection of shapes and edges.
-- **R-MOD-2** A shape is a rectangle with an id, a label/text, a position (x, y) and a size (width, height).
+- **R-MOD-2** A shape has an id, a kind, a label/text, a position (x, y) and a size (width, height). The kind is **rectangle** (default) or **database** (drawn as a cylinder within its bounds).
 - **R-MOD-3** An edge connects a source shape to a target shape and is directed (source → target). It has an id and an optional label.
 - **R-MOD-4** Deleting a shape also deletes the edges connected to it.
 
@@ -35,6 +35,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - **R-IO-4** Import a diagram from Mermaid.
 - **R-IO-5** Import reports unsupported or invalid syntax as an error instead of failing silently.
 - **R-IO-6** Export keeps the layout: PlantUML and Mermaid cannot express positions, so the position and size of every shape are written as format comments (`' kandinsky:layout <id> x=<x> y=<y> width=<width> height=<height>` in PlantUML, `%% kandinsky:layout …` in Mermaid). Other tools ignore these comments and render the diagram as usual.
+- **R-IO-6a** Databases are PlantUML `database` elements (`database "Oracle" as DB`; export adds `allowmixing` so PlantUML accepts them in a class diagram) and Mermaid flowchart database nodes (`DB[(Oracle)]`). Opening a file and pasting (R-UI-22) keep them as databases. Mermaid class diagrams cannot express databases, so a diagram with databases is exported as a Mermaid flowchart; other Mermaid node shapes are imported as rectangles.
 - **R-IO-7** Import restores the layout from these comments. Files without layout comments are arranged with the auto-layout (R-UI-10); in files with layout for only some shapes, the shapes without layout are placed in free grid slots. Malformed layout comments and layout for unknown shapes are reported as errors (R-IO-5).
 
 ## User interface
@@ -46,8 +47,10 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
   - **Save As** — always opens the dialog to save the current diagram to a new location.
 - **R-UI-2** A palette of shapes in the left menu containing:
   - a basic rectangle,
+  - a database (cylinder),
   - a directed edge to connect two rectangles.
 - **R-UI-3** The user adds a rectangle to the canvas from the palette. Clicking the palette's rectangle button selects the rectangle tool (shown as active, like the directed edge tool) and does not add a rectangle yet; the next click on the canvas places a rectangle centered there, selects it and returns to selection. Clicking the button again or Esc cancels. Dragging the button onto the canvas places a rectangle at the drop position.
+- **R-UI-3a** The database tool works like the rectangle tool (R-UI-3): click to select it and click on the canvas, or drag it onto the canvas. Databases can be connected, moved, resized, relabeled, copied, aligned and deleted like rectangles.
 - **R-UI-4** The user connects two rectangles with a directed edge from the palette.
 - **R-UI-5** The user can move, resize, relabel and delete rectangles and edges on the canvas.
 - **R-UI-6** Every change in the UI is sent to the server; the canvas shows the state returned by the server.

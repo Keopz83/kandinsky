@@ -1,5 +1,6 @@
 import { SHAPE_MIME } from './Canvas'
-import type { AlignDirection, Tool } from './types'
+import type { ReactNode } from 'react'
+import type { AlignDirection, ShapeKind, Tool } from './types'
 
 interface Props {
   hasDiagram: boolean
@@ -18,23 +19,13 @@ export function Sidebar(props: Props) {
       <div className="palette-panel d-flex flex-column gap-4">
         <section className="palette d-flex flex-column gap-2">
           <h2 className="small text-uppercase fw-semibold text-body-secondary mb-1">Palette</h2>
-          <button
-            type="button"
-            className={`btn btn-sm palette-item ${props.tool === 'rectangle' ? 'btn-primary active' : 'btn-light'}`}
-            disabled={!hasDiagram}
-            draggable={hasDiagram}
-            title="Click, then click on the canvas to place it, or drag onto the canvas"
-            onClick={() => props.onToolChange(props.tool === 'rectangle' ? 'select' : 'rectangle')}
-            onDragStart={(e) => {
-              e.dataTransfer.setData(SHAPE_MIME, 'rectangle')
-              e.dataTransfer.effectAllowed = 'copy'
-            }}
-          >
-            <svg width="28" height="18" aria-hidden="true">
-              <rect x="1" y="1" width="26" height="16" rx="2" />
-            </svg>
-            Rectangle
-          </button>
+          <ShapeTool kind="rectangle" label="Rectangle" {...props}>
+            <rect x="1" y="1" width="26" height="16" rx="2" />
+          </ShapeTool>
+          <ShapeTool kind="database" label="Database" {...props}>
+            <path className="cylinder" d="M5,4 A9,3 0 0 1 23,4 V14 A9,3 0 0 1 5,14 Z" />
+            <path className="cylinder" d="M5,4 A9,3 0 0 0 23,4" />
+          </ShapeTool>
           <button
             type="button"
             className={`btn btn-sm palette-item ${props.tool === 'edge' ? 'btn-primary active' : 'btn-light'}`}
@@ -101,5 +92,34 @@ export function Sidebar(props: Props) {
         </section>
       </div>
     </aside>
+  )
+}
+
+interface ShapeToolProps extends Props {
+  kind: ShapeKind
+  label: string
+  children: ReactNode
+}
+
+/** A palette button for a shape: click, then click on the canvas to place it, or drag it onto the canvas. */
+function ShapeTool({ kind, label, children, hasDiagram, tool, onToolChange }: ShapeToolProps) {
+  return (
+    <button
+      type="button"
+      className={`btn btn-sm palette-item ${tool === kind ? 'btn-primary active' : 'btn-light'}`}
+      disabled={!hasDiagram}
+      draggable={hasDiagram}
+      title="Click, then click on the canvas to place it, or drag onto the canvas"
+      onClick={() => onToolChange(tool === kind ? 'select' : kind)}
+      onDragStart={(e) => {
+        e.dataTransfer.setData(SHAPE_MIME, kind)
+        e.dataTransfer.effectAllowed = 'copy'
+      }}
+    >
+      <svg width="28" height="18" aria-hidden="true">
+        {children}
+      </svg>
+      {label}
+    </button>
   )
 }

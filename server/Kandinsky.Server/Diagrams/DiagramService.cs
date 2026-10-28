@@ -103,7 +103,9 @@ public sealed class DiagramService
             var (x, y) = request.X is null || request.Y is null
                 ? FreePosition(diagram, width, height)
                 : (ValidCoordinate(request.X.Value, "X"), ValidCoordinate(request.Y.Value, "Y"));
-            var shape = new Shape(NextId(diagram, "s"), ValidLabel(request.Label ?? "Class"), x, y, width, height);
+            var kind = request.Kind ?? ShapeKind.Rectangle;
+            var label = request.Label ?? (kind == ShapeKind.Database ? "Database" : "Class");
+            var shape = new Shape(NextId(diagram, "s"), ValidLabel(label), x, y, width, height, kind);
             _diagrams[diagramId] = diagram with { Shapes = [.. diagram.Shapes, shape] };
             return shape;
         }
@@ -122,6 +124,7 @@ public sealed class DiagramService
                 Y = request.Y is null ? shape.Y : ValidCoordinate(request.Y.Value, "Y"),
                 Width = request.Width is null ? shape.Width : ValidSize(request.Width.Value, "Width"),
                 Height = request.Height is null ? shape.Height : ValidSize(request.Height.Value, "Height"),
+                Kind = request.Kind ?? shape.Kind,
             };
             _diagrams[diagramId] = diagram with { Shapes = diagram.Shapes.Select(s => s.Id == shapeId ? updated : s).ToList() };
             return updated;
@@ -311,7 +314,7 @@ public sealed class DiagramService
 
         if (parsed.Shapes.All(s => s.Bounds is null))
         {
-            var shapes = parsed.Shapes.Select(s => new Shape(s.Id, ValidLabel(s.Label), 0, 0, DefaultWidth, DefaultHeight)).ToList();
+            var shapes = parsed.Shapes.Select(s => new Shape(s.Id, ValidLabel(s.Label), 0, 0, DefaultWidth, DefaultHeight, s.Kind)).ToList();
             diagram = diagram with { Shapes = DiagramLayout.Arrange(shapes, edges) };
         }
         else
@@ -325,13 +328,14 @@ public sealed class DiagramService
                     ValidCoordinate(s.Bounds!.X, "X"),
                     ValidCoordinate(s.Bounds.Y, "Y"),
                     ValidSize(s.Bounds.Width, "Width"),
-                    ValidSize(s.Bounds.Height, "Height")))
+                    ValidSize(s.Bounds.Height, "Height"),
+                    s.Kind))
                 .ToDictionary(s => s.Id);
             diagram = diagram with { Shapes = [.. placed.Values] };
             foreach (var s in parsed.Shapes.Where(s => s.Bounds is null))
             {
                 var (x, y) = FreePosition(diagram, DefaultWidth, DefaultHeight);
-                placed[s.Id] = new Shape(s.Id, ValidLabel(s.Label), x, y, DefaultWidth, DefaultHeight);
+                placed[s.Id] = new Shape(s.Id, ValidLabel(s.Label), x, y, DefaultWidth, DefaultHeight, s.Kind);
                 diagram = diagram with { Shapes = [.. placed.Values] };
             }
             diagram = diagram with { Shapes = parsed.Shapes.Select(s => placed[s.Id]).ToList() };
