@@ -16,6 +16,7 @@ public sealed class DiagramService
     private const double GridX = 200;
     private const double GridY = 120;
     private const double GridOrigin = 40;
+    private const double PasteGap = 80;
 
     private readonly Lock _lock = new();
     private readonly Dictionary<string, Diagram> _diagrams;
@@ -238,23 +239,75 @@ public sealed class DiagramService
 
     public Diagram Import(ImportDiagramRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Text))
+        var (parsed, diagram) = ParseText(request.Text, request.Format);
+        diagram = diagram with { Id = NewDiagramId(), Name = ValidName(request.Name ?? parsed.Title ?? NonBlank(request.FallbackName) ?? "Imported diagram") };
+        lock (_lock)
+        {
+            _diagrams[diagram.Id] = diagram;
+        }
+        return diagram;
+    }
+
+    public PasteResult Paste(string diagramId, PasteDiagramRequest request)
+    {
+        if (request.CenterX is null != request.CenterY is null)
+        {
+            throw new DiagramValidationException("CenterX and CenterY must be given together.");
+        }
+        var (_, pasted) = ParseText(request.Text, request.Format);
+        if (pasted.Shapes.Count == 0)
+        {
+            throw new DiagramValidationException("The pasted text contains no classes.");
+        }
+
+        lock (_lock)
+        {
+            var diagram = Find(diagramId);
+            var used = diagram.Shapes.Select(s => s.Id).Concat(diagram.Edges.Select(e => e.Id)).ToHashSet();
+            // Pasted shapes are new shapes: ids already taken in the diagram are replaced.
+            var ids = pasted.Shapes.ToDictionary(s => s.Id, s => used.Add(s.Id) ? s.Id : NextId(used, "s"));
+
+            var left = pasted.Shapes.Min(s => s.X);
+            var top = pasted.Shapes.Min(s => s.Y);
+            var (dx, dy) = request.CenterX is { } cx && request.CenterY is { } cy
+                ? (cx - (left + pasted.Shapes.Max(s => s.X + s.Width)) / 2, cy - (top + pasted.Shapes.Max(s => s.Y + s.Height)) / 2)
+                : (0, diagram.Shapes.Count == 0 ? 0 : diagram.Shapes.Max(s => s.Y + s.Height) + PasteGap - top);
+            dx = Math.Max(Math.Round(dx), -left);
+            dy = Math.Max(Math.Round(dy), -top);
+
+            var shapes = pasted.Shapes
+                .Select(s => s with { Id = ids[s.Id], X = ValidCoordinate(s.X + dx, "X"), Y = ValidCoordinate(s.Y + dy, "Y") })
+                .ToList();
+            var edges = pasted.Edges
+                .Select(e => e with { Id = NextId(used, "e"), SourceId = ids[e.SourceId], TargetId = ids[e.TargetId] })
+                .ToList();
+            diagram = diagram with { Shapes = [.. diagram.Shapes, .. shapes], Edges = [.. diagram.Edges, .. edges] };
+            _diagrams[diagramId] = diagram;
+            return new PasteResult(diagram, shapes.Select(s => s.Id).ToList(), edges.Select(e => e.Id).ToList());
+        }
+    }
+
+    /// <summary>Parses PlantUML or Mermaid text into an unregistered diagram, laid out as on import (R-IO-7).</summary>
+    private static (ParsedDiagram Parsed, Diagram Diagram) ParseText(string? text, string? formatName)
+    {
+        if (string.IsNullOrWhiteSpace(text))
         {
             throw new DiagramValidationException("Import text must not be empty.");
         }
-        if (request.Text.Length > MaxImportLength)
+        if (text.Length > MaxImportLength)
         {
             throw new DiagramValidationException($"Import text must not exceed {MaxImportLength} characters.");
         }
 
-        var format = request.Format is null ? DiagramFormats.Detect(request.Text) : DiagramFormats.Parse(request.Format);
-        var parsed = DiagramFormats.Parse(request.Text.Replace("\r\n", "\n"), format);
+        text = DiagramFormats.Unfence(DiagramFormats.Normalize(text));
+        var format = formatName is null ? DiagramFormats.Detect(text) : DiagramFormats.Parse(formatName);
+        var parsed = DiagramFormats.Parse(text, format);
 
         var used = parsed.Shapes.Select(s => s.Id).ToHashSet();
         var edges = parsed.Edges
             .Select(e => new Edge(NextId(used, "e"), e.SourceId, e.TargetId, ValidEdgeLabel(e.Label)))
             .ToList();
-        var diagram = new Diagram(NewDiagramId(), ValidName(request.Name ?? parsed.Title ?? NonBlank(request.FallbackName) ?? "Imported diagram"), [], edges);
+        var diagram = new Diagram("", "", [], edges);
 
         if (parsed.Shapes.All(s => s.Bounds is null))
         {
@@ -283,12 +336,7 @@ public sealed class DiagramService
             }
             diagram = diagram with { Shapes = parsed.Shapes.Select(s => placed[s.Id]).ToList() };
         }
-
-        lock (_lock)
-        {
-            _diagrams[diagram.Id] = diagram;
-        }
-        return diagram;
+        return (parsed, diagram);
     }
 
     private Diagram Find(string id) =>

@@ -5,7 +5,10 @@ using Kandinsky.Server.Model;
 
 namespace Kandinsky.Server.Formats;
 
-/// <summary>Mermaid classDiagram subset: classes with optional labels and directed associations.</summary>
+/// <summary>
+/// Mermaid subset: classDiagram with classes, optional labels and directed associations;
+/// flowchart with nodes (any shape becomes a rectangle) and directed links.
+/// </summary>
 public static partial class Mermaid
 {
     public static string Export(Diagram diagram)
@@ -54,9 +57,13 @@ public static partial class Mermaid
             }
             if (!started)
             {
+                if (FlowchartPattern().IsMatch(line))
+                {
+                    return ParseFlowchart(lines, i + 1, builder);
+                }
                 if (line is not ("classDiagram" or "classDiagram-v2"))
                 {
-                    throw ParsedDiagramBuilder.Error(number, "expected 'classDiagram'. Only Mermaid class diagrams are supported.");
+                    throw ParsedDiagramBuilder.Error(number, "expected 'classDiagram' or 'flowchart'. Only Mermaid class diagrams and flowcharts are supported.");
                 }
                 started = true;
                 continue;
@@ -93,10 +100,95 @@ public static partial class Mermaid
 
         if (!started)
         {
-            throw new DiagramValidationException("Mermaid text must contain 'classDiagram'.");
+            throw new DiagramValidationException("Mermaid text must contain 'classDiagram' or 'flowchart'.");
         }
         return builder.Build();
     }
+
+    private static ParsedDiagram ParseFlowchart(string[] lines, int start, ParsedDiagramBuilder builder)
+    {
+        for (var i = start; i < lines.Length; i++)
+        {
+            var line = lines[i].Trim().TrimEnd(';').TrimEnd();
+            var number = i + 1;
+            if (line.Length == 0)
+            {
+                continue;
+            }
+            if (line.StartsWith("%%", StringComparison.Ordinal))
+            {
+                LayoutComment.Read(line[2..].Trim(), number, builder);
+                continue;
+            }
+            // Styling has no counterpart in Kandinsky.
+            if (FlowchartStylePattern().IsMatch(line))
+            {
+                continue;
+            }
+            if (line.StartsWith("subgraph", StringComparison.Ordinal))
+            {
+                throw ParsedDiagramBuilder.Error(number, "subgraphs are not supported yet.");
+            }
+            ReadFlowchartStatement(line, number, builder);
+        }
+        return builder.Build();
+    }
+
+    /// <summary>Reads <c>A[label] --&gt; B &amp; C --&gt;|label| D</c>: a chain of node groups joined by directed links.</summary>
+    private static void ReadFlowchartStatement(string line, int number, ParsedDiagramBuilder builder)
+    {
+        var position = 0;
+        var sources = ReadFlowchartNodes(line, ref position, number, builder);
+        while (position < line.Length)
+        {
+            var link = LinkPattern().Match(line, position);
+            if (!link.Success)
+            {
+                throw ParsedDiagramBuilder.Error(number, OtherLinkPattern().IsMatch(line, position)
+                    ? "only directed links ('-->', '-.->', '==>') are supported."
+                    : $"unsupported syntax '{line}'.");
+            }
+            position += link.Length;
+            var targets = ReadFlowchartNodes(line, ref position, number, builder);
+            var label = link.Groups["label"].Success ? FlowchartText(link.Groups["label"].Value) : null;
+            foreach (var source in sources)
+            {
+                foreach (var target in targets)
+                {
+                    builder.AddEdge(number, source, target, label);
+                }
+            }
+            sources = targets;
+        }
+    }
+
+    private static List<string> ReadFlowchartNodes(string line, ref int position, int number, ParsedDiagramBuilder builder)
+    {
+        var ids = new List<string>();
+        while (true)
+        {
+            var node = NodePattern().Match(line, position);
+            if (!node.Success)
+            {
+                throw ParsedDiagramBuilder.Error(number, $"unsupported syntax '{line}'.");
+            }
+            position += node.Length;
+            var id = node.Groups["id"].Value;
+            builder.DeclareShape(id, node.Groups["text"].Success ? FlowchartText(node.Groups["text"].Value) : null);
+            ids.Add(id);
+
+            var and = AndPattern().Match(line, position);
+            if (!and.Success)
+            {
+                return ids;
+            }
+            position += and.Length;
+        }
+    }
+
+    // Labels are single-line: line breaks become spaces.
+    private static string FlowchartText(string text) =>
+        WhitespacePattern().Replace(LineBreakPattern().Replace(text.Trim().Trim('"'), " "), " ").Trim();
 
     private static int SkipFrontMatter(string[] lines, ParsedDiagramBuilder builder)
     {
@@ -133,4 +225,31 @@ public static partial class Mermaid
 
     [GeneratedRegex(@"^(?<left>\w+)\s*(?<arrow><-+|<\.+|-+>|\.+>)\s*(?<right>\w+)\s*(?::\s*(?<label>.*))?$")]
     private static partial Regex EdgePattern();
+
+    [GeneratedRegex(@"^(?:flowchart|graph)(?:\s+(?:TB|TD|BT|LR|RL))?\s*;?$")]
+    private static partial Regex FlowchartPattern();
+
+    [GeneratedRegex(@"^(?:style|classDef|class|linkStyle|click|direction)\s")]
+    private static partial Regex FlowchartStylePattern();
+
+    // A node id with an optional shape such as [text], (text), [(text)], {text}, ((text)) or "quoted" text, and an optional :::class.
+    [GeneratedRegex(@"\G\s*(?<id>\w+)(?:(?:\(\(\(|\(\[|\[\[|\[\(|\(\(|\{\{|\[/|\[\\|\[|\(|\{|>)\s*(?:""(?<text>[^""]*)""|(?<text>[^""]*?))\s*(?:\)\)\)|\]\)|\]\]|\)\]|\)\)|\}\}|/\]|\\\]|\]|\)|\}))?(?::::\w+)?\s*")]
+    private static partial Regex NodePattern();
+
+    // -->, -.->, ==> (any length) with an optional |label|, or the text forms -- label -->, -. label .->, == label ==>.
+    [GeneratedRegex(@"\G\s*(?:(?:-{2,}>|-\.+->|={2,}>)(?:\s*\|(?:""(?<label>[^""]*)""|(?<label>[^|]*))\|)?|--\s*(?<label>[^>]+?)\s*-{2,}>|-\.\s*(?<label>[^>]+?)\s*\.+->|==\s*(?<label>[^>]+?)\s*={2,}>)\s*")]
+    private static partial Regex LinkPattern();
+
+    // Undirected and other links: ---, -.-, ===, ~~~, --o, --x, <-->.
+    [GeneratedRegex(@"\G\s*[<ox]?[-=.~]{2,}")]
+    private static partial Regex OtherLinkPattern();
+
+    [GeneratedRegex(@"\G\s*&\s*")]
+    private static partial Regex AndPattern();
+
+    [GeneratedRegex(@"<br\s*/?>", RegexOptions.IgnoreCase)]
+    private static partial Regex LineBreakPattern();
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex WhitespacePattern();
 }

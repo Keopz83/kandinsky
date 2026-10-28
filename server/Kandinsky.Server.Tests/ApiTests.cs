@@ -275,4 +275,99 @@ public sealed class ApiTests : IDisposable
 
         Assert.Equal("Line 2: unsupported syntax 'A -- B'.", problem.Detail);
     }
+
+    [Fact]
+    public async Task Paste_adds_shapes_and_edges_centered_on_the_given_point()
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+        var existing = await Read<Shape>(await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/shapes", new { label = "Old", x = 0, y = 0 }), HttpStatusCode.Created);
+        var text = "classDiagram\n  A --> B : uses\n  %% kandinsky:layout A x=40 y=40 width=140 height=60\n  %% kandinsky:layout B x=40 y=200 width=140 height=60";
+
+        var pasted = await Read<PasteResult>(
+            await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/paste", new { text, centerX = 500, centerY = 400 }),
+            HttpStatusCode.OK);
+
+        Assert.Equal(
+            [existing, new Shape("A", "A", 430, 290, 140, 60), new Shape("B", "B", 430, 450, 140, 60)],
+            pasted.Diagram.Shapes);
+        var edge = Assert.Single(pasted.Diagram.Edges);
+        Assert.Equal(("A", "B", "uses"), (edge.SourceId, edge.TargetId, edge.Label));
+        Assert.Equal(["A", "B"], pasted.ShapeIds);
+        Assert.Equal([edge.Id], pasted.EdgeIds);
+        Assert.Equal(pasted.Diagram, await client.GetFromJsonAsync<Diagram>($"/api/diagrams/{diagram.Id}"), DiagramComparer);
+    }
+
+    [Fact]
+    public async Task Paste_renames_ids_already_used_and_places_below_without_center()
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(
+            await client.PostAsJsonAsync("/api/diagrams/import", new { text = "@startuml\nA --> B\n@enduml" }),
+            HttpStatusCode.Created);
+        var bottom = diagram.Shapes.Max(s => s.Y + s.Height);
+
+        var pasted = await Read<PasteResult>(
+            await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/paste", new { text = "@startuml\nA --> C\n@enduml" }),
+            HttpStatusCode.OK);
+
+        Assert.Equal(4, pasted.Diagram.Shapes.Count);
+        var added = pasted.Diagram.Shapes.Where(s => pasted.ShapeIds.Contains(s.Id)).ToList();
+        Assert.Equal(["A", "C"], added.Select(s => s.Label));
+        Assert.DoesNotContain("A", pasted.ShapeIds);
+        Assert.Equal(bottom + 80, added.Min(s => s.Y));
+        var edge = pasted.Diagram.Edges.Single(e => pasted.EdgeIds.Contains(e.Id));
+        Assert.Equal((pasted.ShapeIds[0], pasted.ShapeIds[1]), (edge.SourceId, edge.TargetId));
+        Assert.Equal(2, pasted.Diagram.Edges.Select(e => e.Id).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task Paste_accepts_a_mermaid_flowchart_in_a_markdown_code_fence()
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+        var text = "```mermaid\nflowchart LR\n    MXO[MXO REST API] --> DS[DataSource Backend<br/>CronJob]\n    DS -->|gRPC bulk| ASSET[Asset.API]\n```\n";
+
+        var pasted = await Read<PasteResult>(
+            await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/paste", new { text, centerX = 400, centerY = 300 }),
+            HttpStatusCode.OK);
+
+        Assert.Equal(["MXO REST API", "DataSource Backend CronJob", "Asset.API"], pasted.Diagram.Shapes.Select(s => s.Label));
+        Assert.Equal([null, "gRPC bulk"], pasted.Diagram.Edges.Select(e => e.Label));
+    }
+
+    [Theory]
+    [InlineData("\uFEFF```mermaid\r\nflowchart LR\r\n    A[One] --> B[Two]\r\n```")]
+    [InlineData("```mermaid\rflowchart\u00A0LR\r\u200BA[One]\u00A0-->\u00A0B[Two]\r```")]
+    [InlineData("```mermaid\u2028flowchart LR\u2028A[One] --> B[Two]\u2028```")]
+    public async Task Paste_accepts_text_with_line_breaks_and_invisible_characters_from_other_apps(string text)
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+
+        var pasted = await Read<PasteResult>(
+            await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/paste", new { text, centerX = 400, centerY = 300 }),
+            HttpStatusCode.OK);
+
+        Assert.Equal(["One", "Two"], pasted.Diagram.Shapes.Select(s => s.Label));
+        Assert.Single(pasted.Diagram.Edges);
+    }
+
+    [Theory]
+    [InlineData("just some text", "Cannot detect the format of 'just some text'. Specify 'plantuml' or 'mermaid'.")]
+    [InlineData("```mermaid\nsequenceDiagram\n  A->>B: hi\n```", "Line 2: expected 'classDiagram' or 'flowchart'. Only Mermaid class diagrams and flowcharts are supported.")]
+    [InlineData("classDiagram\n  A -- B", "Line 2: unsupported syntax 'A -- B'.")]
+    [InlineData("classDiagram", "The pasted text contains no classes.")]
+    public async Task Paste_reports_invalid_text_and_keeps_the_diagram(string text, string expected)
+    {
+        var client = CreateClient();
+        var diagram = await Read<Diagram>(await client.PostAsJsonAsync("/api/diagrams", new { }), HttpStatusCode.Created);
+
+        var problem = await Read<ProblemDetails>(
+            await client.PostAsJsonAsync($"/api/diagrams/{diagram.Id}/paste", new { text, centerX = 100, centerY = 100 }),
+            HttpStatusCode.BadRequest);
+
+        Assert.Equal(expected, problem.Detail);
+        Assert.Empty((await client.GetFromJsonAsync<Diagram>($"/api/diagrams/{diagram.Id}"))!.Shapes);
+    }
 }

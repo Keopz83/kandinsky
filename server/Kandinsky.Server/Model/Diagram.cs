@@ -9,5 +9,8 @@ public sealed record Edge(string Id, string SourceId, string TargetId, string? L
 /// <summary>A diagram with its shapes and edges.</summary>
 public sealed record Diagram(string Id, string Name, IReadOnlyList<Shape> Shapes, IReadOnlyList<Edge> Edges);
 
+/// <summary>The diagram after a paste and the ids of the added shapes and edges.</summary>
+public sealed record PasteResult(Diagram Diagram, IReadOnlyList<string> ShapeIds, IReadOnlyList<string> EdgeIds);
+
 /// <summary>Id and name of a diagram, used in diagram lists.</summary>
 public sealed record DiagramSummary(string Id, string Name);

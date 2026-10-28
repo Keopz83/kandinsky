@@ -24,6 +24,12 @@ public sealed record UpdateEdgeRequest(string? Label, string? SourceId, string? 
 /// </summary>
 public sealed record ImportDiagramRequest(string Text, string? Format, string? Name, string? FallbackName = null);
 
+/// <summary>
+/// Payload for pasting PlantUML or Mermaid text into an existing diagram. Format is detected from the text when omitted.
+/// The pasted shapes are centered on (CenterX, CenterY); without a center they are placed below the existing shapes.
+/// </summary>
+public sealed record PasteDiagramRequest(string Text, string? Format, double? CenterX, double? CenterY);
+
 public enum AlignDirection
 {
     /// <summary>In a row: vertical centers match the first shape's.</summary>

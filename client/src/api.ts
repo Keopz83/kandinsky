@@ -1,4 +1,4 @@
-import type { AlignDirection, Diagram, DiagramSummary, Edge, Format, Shape } from './types'
+import type { AlignDirection, Diagram, DiagramSummary, Edge, Format, PasteResult, Shape } from './types'
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(`/api/diagrams${path}`, {
@@ -28,6 +28,8 @@ export const api = {
   remove: (id: string) => request<void>('DELETE', at(id)),
   exportText: (id: string, format: Format) => request<string>('GET', `${at(id, 'export')}?format=${format}`),
   importText: (text: string, name?: string) => request<Diagram>('POST', '/import', { text, name }),
+  paste: (id: string, text: string, center: { x: number; y: number }) =>
+    request<PasteResult>('POST', at(id, 'paste'), { text, centerX: center.x, centerY: center.y }),
   align: (id: string, shapeIds: string[], direction: AlignDirection) =>
     request<Diagram>('POST', at(id, 'align'), { shapeIds, direction }),
   layout: (id: string) => request<Diagram>('POST', at(id, 'layout')),

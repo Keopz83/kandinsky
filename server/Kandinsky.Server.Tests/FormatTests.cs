@@ -94,13 +94,61 @@ public class FormatTests
     }
 
     [Theory]
-    [InlineData("flowchart LR\nA --> B", "Line 1: expected 'classDiagram'. Only Mermaid class diagrams are supported.")]
+    [InlineData("sequenceDiagram\nA->>B: hi", "Line 1: expected 'classDiagram' or 'flowchart'. Only Mermaid class diagrams and flowcharts are supported.")]
     [InlineData("classDiagram\nA <|-- B", "Line 2: unsupported syntax 'A <|-- B'.")]
     [InlineData("---\ntitle: X\nclassDiagram", "Unterminated front matter: missing closing '---'.")]
+    [InlineData("flowchart LR\nA --- B", "Line 2: only directed links ('-->', '-.->', '==>') are supported.")]
+    [InlineData("flowchart LR\nA <--> B", "Line 2: only directed links ('-->', '-.->', '==>') are supported.")]
+    [InlineData("flowchart LR\nsubgraph one\nA --> B\nend", "Line 2: subgraphs are not supported yet.")]
+    [InlineData("flowchart LR\nA[open --> B", "Line 2: unsupported syntax 'A[open --> B'.")]
     public void Reports_invalid_mermaid(string text, string message)
     {
         var error = Assert.Throws<DiagramValidationException>(() => Mermaid.Parse(text));
         Assert.Equal(message, error.Message);
+    }
+
+    [Fact]
+    public void Parses_mermaid_flowchart_nodes_and_directed_links()
+    {
+        var parsed = Mermaid.Parse("""
+            flowchart LR
+                MXO[MXO REST API] --> DS[DataSource Backend<br/>CronJob]
+                DS -->|gRPC bulk| ASSET[Asset.API]
+                ASSET --> DB[(Oracle<br/>source of truth)]
+                DB -- "via view" --> VIEW{{DB View}}:::view
+                VIEW -.-> A & B ==> C(("Quoted (text)"));
+                style A fill:#f9f
+                classDef view stroke:#333
+            """);
+
+        Assert.Equal(
+            [
+                new("MXO", "MXO REST API"), new("DS", "DataSource Backend CronJob"), new("ASSET", "Asset.API"),
+                new("DB", "Oracle source of truth"), new("VIEW", "DB View"), new("A", "A"), new("B", "B"), new("C", "Quoted (text)"),
+            ],
+            parsed.Shapes);
+        Assert.Equal(
+            [
+                new("MXO", "DS", null), new("DS", "ASSET", "gRPC bulk"), new("ASSET", "DB", null), new("DB", "VIEW", "via view"),
+                new("VIEW", "A", null), new("VIEW", "B", null), new("A", "C", null), new("B", "C", null),
+            ],
+            parsed.Edges);
+    }
+
+    [Theory]
+    [InlineData("```mermaid\nclassDiagram\n```", "\nclassDiagram\n")]
+    [InlineData("\n~~~~ plantuml\n@startuml\n@enduml\n~~~~\n", "\n\n@startuml\n@enduml\n\n")]
+    [InlineData("classDiagram", "classDiagram")]
+    public void Removes_markdown_code_fence(string text, string expected)
+    {
+        Assert.Equal(expected, DiagramFormats.Unfence(text));
+    }
+
+    [Fact]
+    public void Reports_unclosed_code_fence()
+    {
+        var error = Assert.Throws<DiagramValidationException>(() => DiagramFormats.Unfence("```mermaid\nclassDiagram"));
+        Assert.Equal("Line 1: code fence is not closed.", error.Message);
     }
 
     [Theory]
@@ -108,6 +156,9 @@ public class FormatTests
     [InlineData("\n' comment\n@startuml\n@enduml", DiagramFormat.PlantUml)]
     [InlineData("classDiagram", DiagramFormat.Mermaid)]
     [InlineData("---\ntitle: X\n---\nclassDiagram", DiagramFormat.Mermaid)]
+    [InlineData("flowchart LR", DiagramFormat.Mermaid)]
+    [InlineData("graph TD;", DiagramFormat.Mermaid)]
+    [InlineData("sequenceDiagram", DiagramFormat.Mermaid)]
     public void Detects_format(string text, DiagramFormat expected)
     {
         Assert.Equal(expected, DiagramFormats.Detect(text));

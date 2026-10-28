@@ -23,6 +23,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - **R-API-3** Edges: add (source, target), get, update (label, endpoints), delete within a diagram.
 - **R-API-4** Import a diagram from PlantUML or Mermaid text.
 - **R-API-5** Export a diagram as PlantUML or Mermaid text.
+- **R-API-5a** Paste PlantUML or Mermaid text into an existing diagram (R-UI-22); the response contains the ids of the added shapes and edges.
 - **R-API-6** The API uses JSON, correct HTTP status codes and validates input (e.g. edge endpoints must reference existing shapes).
 - **R-API-7** The API is described by an OpenAPI specification, so tools like an MCP server can be generated or written against it.
 
@@ -67,6 +68,7 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - **R-UI-19** Trackpad gestures on the whiteboard (as on macOS): moving two fingers drags (pans) the whiteboard in any direction; pinching zooms, centered on the pointer. A mouse wheel keeps zooming (R-UI-15). On touch screens, moving two fingers also pans.
 - **R-UI-20** The UI uses Bootstrap CSS styling (menu bar, drop-down menus, palette buttons, tabs, form fields, status bar).
 - **R-UI-21** Buttons use solid backgrounds and no borders.
+- **R-UI-22** Ctrl+V (Cmd+V on macOS) on the whiteboard pastes a PlantUML or Mermaid diagram from the clipboard into the open whiteboard. The pasted classes and associations are added as new rectangles and edges, keep their relative layout (layout comments, else auto-layout, R-IO-7), are centered on the mouse pointer (or the visible area when the pointer is outside the whiteboard) and become the selection. Shape ids already used in the whiteboard are replaced by new ones. Text that is not a supported diagram is reported as an error (R-IO-5) and changes nothing. Pasting into a text field (e.g. a label) is a normal text paste.
 
 ## Decisions (first implementation)
 
@@ -75,6 +77,8 @@ Web app for creating code UML diagrams. Server-side processing, thin React clien
 - Save / Save As write PlantUML or Mermaid with layout comments (R-IO-6), so saved files are reopened with Open. The format follows the extension chosen in the dialog; the default save format is offered first. The dialog uses the browser's File System Access API (Chrome, Edge); other browsers download the file in the default format. Open uses the same API's open dialog so that Save can write back to the opened file; the format of an opened file follows its extension, or its content for other extensions (e.g. `.txt`). Browsers without it open files through a regular file input, and the first Save asks for a location. If the browser refuses write access to the chosen file, it is downloaded instead and the next Save asks again. The default save format is stored in the browser (`localStorage`).
 - Saved files contain no diagram name (no `title`); the name corresponds exactly to the file name (without extension). When a file name is chosen in the save dialog, the diagram is renamed to it; later Saves to the same file keep the current name. Opening a file names the diagram after the file, ignoring a title in it. A diagram renamed since it was saved counts as unsaved.
 - Import/export: class diagram subset — classes (PlantUML also `interface`, `enum`, `abstract`, `rectangle`) and directed associations (`-->`, `..>`, reversed `<--`, `<..`) with optional labels. Class members and other relation types are rejected with a line-numbered error.
+- Mermaid flowcharts (`flowchart` / `graph`) are imported too: every node shape becomes a rectangle labeled with its text (`<br/>` becomes a space), directed links (`-->`, `-.->`, `==>`, with `|label|` or `-- label -->`, chains and `&`) become edges, styling lines (`style`, `classDef`, `class`, `linkStyle`, `click`) are ignored. Undirected links and subgraphs are rejected. Export always writes a class diagram.
+- Text wrapped in a Markdown code fence (```` ```mermaid ```` … ```` ``` ````) is accepted on import and paste.
 - Imported diagrams keep the layout from their layout comments, otherwise they are auto-laid out (R-IO-7); shapes added without a position are placed in the first free grid slot.
 - Live updates: the UI polls the open diagram and the diagram list (tabs) every 2 seconds.
 - Tabs keep their order; diagrams created elsewhere are appended at the end. If the open diagram is deleted, the neighboring tab opens.

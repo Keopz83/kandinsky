@@ -26,6 +26,12 @@ export interface DiagramSummary {
   name: string
 }
 
+export interface PasteResult {
+  diagram: Diagram
+  shapeIds: string[]
+  edgeIds: string[]
+}
+
 export type Format = 'plantuml' | 'mermaid'
 
 export type AlignDirection = 'horizontal' | 'vertical'

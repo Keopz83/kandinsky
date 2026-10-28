@@ -168,6 +168,8 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   const [marquee, setMarquee] = useState<Marquee | null>(null)
   const [edgeSource, setEdgeSource] = useState<string | null>(null)
   const [pointer, setPointer] = useState<Point | null>(null)
+  // Last mouse position over the whiteboard (client coordinates), where pasted diagrams are centered.
+  const hover = useRef<{ clientX: number; clientY: number } | null>(null)
 
   const dragged = new Map(drag && !drag.copy ? drag.currents.map((s) => [s.id, s]) : [])
   const shapes = diagram.shapes.map((s) => dragged.get(s.id) ?? s)
@@ -204,6 +206,33 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [diagram, selected, onSelect, mutate, onToolDone])
+
+  // Ctrl/Cmd+V pastes PlantUML or Mermaid text from the clipboard, centered on the mouse or else the visible area.
+  function onPaste(e: ClipboardEvent) {
+    const target = e.target
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable)) {
+      return
+    }
+    const text = e.clipboardData?.getData('text/plain') ?? ''
+    if (!text.trim()) {
+      return
+    }
+    e.preventDefault()
+    const rect = svgRef.current!.getBoundingClientRect()
+    const at = toPoint(hover.current ?? { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 })
+    void mutate(async (d) => {
+      const pasted = await api.paste(d, text, at)
+      onSelect([...pasted.shapeIds, ...pasted.edgeIds])
+    })
+  }
+  // The ref keeps the listener on the latest view and diagram.
+  const pasteHandler = useRef(onPaste)
+  pasteHandler.current = onPaste
+  useEffect(() => {
+    const listener = (e: ClipboardEvent) => pasteHandler.current(e)
+    window.addEventListener('paste', listener)
+    return () => window.removeEventListener('paste', listener)
+  }, [])
 
   // Mouse wheel forward zooms in, backward zooms out, keeping the point under the cursor in place.
   // A two-finger move on a trackpad drags the whiteboard; a trackpad pinch (sent with ctrlKey) zooms.
@@ -364,6 +393,7 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
   }
 
   function onPointerMove(e: PointerEvent) {
+    hover.current = { clientX: e.clientX, clientY: e.clientY }
     const p = toPoint(e)
     if (source) {
       setPointer(p)
@@ -531,7 +561,10 @@ export function Canvas({ diagram, tool, selected, onSelect, onToolDone, mutate }
         onPointerDown={onBackgroundPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
+        onPointerLeave={(e) => {
+          hover.current = null
+          onPointerUp(e)
+        }}
         onContextMenu={(e) => e.ctrlKey && e.preventDefault()}
         onDragOver={onDragOver}
         onDrop={onDrop}

@@ -67,6 +67,11 @@ public static class DiagramEndpoints
             .WithSummary("Create a diagram from PlantUML or Mermaid text")
             .WithDescription("Supports class diagrams with classes and directed associations. Shapes are laid out in a grid. The diagram is named `name`, else the title in the text, else `fallbackName` (e.g. the file name).");
 
+        diagrams.MapPost("/{id}/paste", (string id, PasteDiagramRequest request, DiagramService service) => TypedResults.Ok(service.Paste(id, request)))
+            .WithName("PasteDiagram")
+            .WithSummary("Add the classes and associations of PlantUML or Mermaid text to a diagram")
+            .WithDescription("The pasted shapes keep their relative layout (layout comments, else auto-layout) and are centered on `centerX`/`centerY`, else placed below the existing shapes. Ids already used in the diagram are replaced. Returns the updated diagram and the ids of the added shapes and edges.");
+
         diagrams.MapPost("/{id}/align", (string id, AlignShapesRequest request, DiagramService service) => TypedResults.Ok(service.Align(id, request)))
             .WithTags("Layout")
             .WithName("AlignShapes")
